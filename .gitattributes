@@ -1,0 +1,4 @@
+# Keep LF line endings in the repo so files work the same in Docker (Linux) and on Windows.
+* text=auto eol=lf
+*.jpg binary
+*.png binary
