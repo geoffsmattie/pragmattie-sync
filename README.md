@@ -23,7 +23,7 @@ docker compose up --build
 | Web app | http://localhost:5173 |
 | API docs (Swagger) | http://localhost:8000/docs |
 | API health | http://localhost:8000/api/v1/health |
-| MySQL | `localhost:3306` (user/password in `.env`) |
+| MySQL | `localhost:3307` (user/password in `.env`) |
 
 Stop with `Ctrl+C`, or `docker compose down` (add `-v` to wipe the database).
 

@@ -1,7 +1,7 @@
 # One command starts the whole stack:  docker compose up --build
 #   Web app  -> http://localhost:5173
 #   API docs -> http://localhost:8000/docs
-#   MySQL    -> localhost:3306
+#   MySQL    -> localhost:3307 (from your PC; containers use db:3306)
 
 services:
   db:
@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "3306:3306"
+      - "${MYSQL_HOST_PORT:-3307}:3306"   # 3307 on your PC avoids clashing with a local MySQL
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
