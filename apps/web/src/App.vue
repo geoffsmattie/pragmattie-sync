@@ -14,7 +14,7 @@ const nav = [
   <v-app>
     <v-app-bar color="primary" flat>
       <v-app-bar-title>
-        <span class="font-weight-bold">SyncVista</span>
+        <span class="font-weight-bold">PragMattie Sync</span>
         <span class="text-accent ml-1">CRM</span>
       </v-app-bar-title>
     </v-app-bar>

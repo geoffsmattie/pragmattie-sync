@@ -1,10 +1,10 @@
-# SyncVista CRM
+# PragMattie Sync CRM
 
 **Predictive orchestration of the SDLC with agentic AI: a working demo.**
 
-SyncVista is a fictional SaaS company that sells a CRM to mid-market B2B sales teams. This repo holds both its product and an AI-driven delivery system that predicts where software delivery will go wrong and has agents act before it does, with human approval scaled to risk.
+PragMattie Sync is a fictional SaaS company that sells a CRM to mid-market B2B sales teams. This repo holds both its product and an AI-driven delivery system that predicts where software delivery will go wrong and has agents act before it does, with human approval scaled to risk.
 
-> Demo built by **PragMattie Growth Partners, LLC**. SyncVista, its team and its customers are fictional.
+> Demo built by **PragMattie Growth Partners, LLC**. PragMattie Sync, its team and its customers are fictional.
 
 ## Quick start
 
