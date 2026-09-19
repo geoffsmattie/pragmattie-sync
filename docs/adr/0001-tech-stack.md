@@ -9,7 +9,7 @@
 | --- | --- |
 | API | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
 | Database | MySQL 8.4 (Docker locally) |
-| Front end | Vue 3, Vite, Vuetify, Pinia, Vue Router |
+| Front end | Vue 3, Vite, Vuetify, Pinia, Vue Router, Chart.js (vue-chartjs) |
 | Tests | pytest, Vitest |
 | CI | GitHub Actions |
 | Agents (later) | Python + Claude API |

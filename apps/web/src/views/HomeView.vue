@@ -1,13 +1,25 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
+import { getJson } from '../api'
+import { money } from '../format'
 import { useHealthStore } from '../stores/health'
 
 const health = useHealthStore()
-onMounted(() => health.check())
+const summary = ref(null)
+const summaryError = ref('')
+
+onMounted(async () => {
+  health.check()
+  try {
+    summary.value = await getJson('/api/v1/summary')
+  } catch (err) {
+    summaryError.value = err.message
+  }
+})
 
 const phases = [
   { n: 1, title: 'Foundation', done: true },
-  { n: 2, title: 'The CRM' },
+  { n: 2, title: 'The CRM', done: true },
   { n: 3, title: 'Signals + synthetic history' },
   { n: 4, title: 'First agents: triage + PR risk' },
   { n: 5, title: 'Forecasting' },
@@ -16,14 +28,39 @@ const phases = [
 </script>
 
 <template>
-  <v-container class="py-8" max-width="960">
-    <h1 class="text-h4 mb-2">Welcome to SyncVista</h1>
+  <v-container class="py-8" max-width="1100">
+    <h1 class="page-title mb-2">Welcome to PragMattie Sync</h1>
     <p class="text-body-1 text-medium-emphasis mb-6">
       A CRM for mid-market B2B sales teams, and a live testbed for predictive, agent-driven
       software delivery.
     </p>
 
-    <v-row>
+    <v-alert v-if="summaryError" type="warning" variant="tonal" class="mb-4">
+      Couldn't load the sales summary: {{ summaryError }}
+    </v-alert>
+    <v-row v-if="summary">
+      <v-col
+        v-for="tile in [
+          { label: 'Open leads', value: summary.open_leads.toLocaleString(), to: '/leads', icon: 'mdi-account-plus-outline' },
+          { label: 'Open deals', value: summary.open_deals.toLocaleString(), to: '/pipeline', icon: 'mdi-view-column-outline' },
+          { label: 'Open pipeline', value: money(summary.open_pipeline), to: '/pipeline', icon: 'mdi-cash-multiple' },
+          { label: `Won in ${summary.quarter}`, value: money(summary.won_this_quarter), to: '/forecast', icon: 'mdi-trophy-outline' },
+        ]"
+        :key="tile.label"
+        cols="12"
+        sm="6"
+        md="3"
+      >
+        <v-card :to="tile.to" class="pa-4" hover>
+          <div class="d-flex align-center ga-2 text-body-2 text-medium-emphasis">
+            <v-icon :icon="tile.icon" size="18" />{{ tile.label }}
+          </div>
+          <div class="kpi-value mt-2">{{ tile.value }}</div>
+        </v-card>
+      </v-col>
+    </v-row>
+
+    <v-row class="mt-2">
       <v-col cols="12" md="6">
         <v-card title="System status" prepend-icon="mdi-heart-pulse">
           <v-card-text>
@@ -63,3 +100,10 @@ const phases = [
     </v-row>
   </v-container>
 </template>
+
+<style scoped>
+.page-title {
+  font-size: 30px;
+  font-weight: 700;
+}
+</style>

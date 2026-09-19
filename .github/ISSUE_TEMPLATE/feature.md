@@ -1,6 +1,6 @@
 ---
 name: Feature / story
-about: New capability for SyncVista CRM or the orchestration layer
+about: New capability for PragMattie Sync CRM or the orchestration layer
 labels: type:feature
 ---
 

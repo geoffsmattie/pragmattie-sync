@@ -5,7 +5,7 @@ import logo from '../assets/pragmattie-logo.jpg'
 <template>
   <v-footer class="brand-footer" border>
     <span class="text-medium-emphasis text-body-2">
-      SyncVista is a fictional company. Demo by
+      PragMattie Sync is a fictional demo company created by
     </span>
     <img :src="logo" alt="PragMattie Growth Partners, LLC" class="brand-logo" />
   </v-footer>

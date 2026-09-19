@@ -11,4 +11,4 @@ def test_health_reports_ok_with_database():
     body = response.json()
     assert body["status"] == "ok"
     assert body["database"] == "ok"
-    assert body["service"] == "SyncVista CRM API"
+    assert body["service"] == "PragMattie Sync CRM API"

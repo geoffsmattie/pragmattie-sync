@@ -22,3 +22,6 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Files the Claude desktop app saves into this folder
+Claude outputs/

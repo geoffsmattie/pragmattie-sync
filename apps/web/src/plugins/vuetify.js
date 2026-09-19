@@ -12,9 +12,9 @@ export const brand = {
 
 export default createVuetify({
   theme: {
-    defaultTheme: 'syncvista',
+    defaultTheme: 'pragmattieSync',
     themes: {
-      syncvista: {
+      pragmattieSync: {
         dark: false,
         colors: {
           primary: brand.navy,

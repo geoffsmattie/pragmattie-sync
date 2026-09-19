@@ -36,15 +36,15 @@ jobs:
         image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: syncvista
-          MYSQL_USER: syncvista
-          MYSQL_PASSWORD: syncvista
+          MYSQL_DATABASE: pragmattie_sync
+          MYSQL_USER: pragmattie_sync
+          MYSQL_PASSWORD: pragmattie_sync
         ports: ["3306:3306"]
         options: >-
           --health-cmd="mysqladmin ping -h localhost -uroot -proot"
           --health-interval=5s --health-timeout=5s --health-retries=20
     env:
-      DATABASE_URL: mysql+pymysql://syncvista:syncvista@127.0.0.1:3306/syncvista
+      DATABASE_URL: mysql+pymysql://pragmattie_sync:pragmattie_sync@127.0.0.1:3306/pragmattie_sync
     defaults:
       run:
         working-directory: apps/api
@@ -57,6 +57,7 @@ jobs:
           cache-dependency-path: apps/api/requirements.txt
       - run: pip install -r requirements.txt
       - run: alembic upgrade head
+      - run: python -m app.seed
       - run: alembic downgrade base
 
   web:
