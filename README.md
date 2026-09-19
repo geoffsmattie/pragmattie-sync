@@ -27,6 +27,28 @@ docker compose up --build
 
 Stop with `Ctrl+C`, or `docker compose down` (add `-v` to wipe the database).
 
+## Demo data
+
+The first time the API starts on an empty database it loads a demo sales org: 6 reps, 60 accounts, 150 contacts, about 300 opportunities and 220 leads. Every company and person is invented, and emails use the reserved `.example` domain. Dates are relative to today, so the current quarter's forecast always looks live.
+
+To reset the demo data while the app is running:
+
+```bash
+docker compose exec api python -m app.seed --reset
+```
+
+## What's in the CRM
+
+| Screen | What it does |
+| --- | --- |
+| Home | Headline numbers: open leads, open deals, open pipeline, won this quarter |
+| Leads | Search, filter and sort leads; create a lead; change status; convert to an account |
+| Accounts | Browse companies with contact counts and open pipeline; drill into an account |
+| Pipeline | Open deals by stage for this quarter, next quarter or all; move a deal between stages |
+| Forecast | Quota, closed won, commit, best case and weighted forecast, by month, stage and rep |
+
+API reference: http://localhost:8000/docs
+
 ## Repo layout
 
 ```
@@ -58,7 +80,7 @@ npm test
 | Phase | Goal | Status |
 | --- | --- | --- |
 | 1 | Foundation: repo, Docker, CI | ✅ |
-| 2 | The CRM: leads, accounts, pipeline, forecast | |
+| 2 | The CRM: leads, accounts, pipeline, forecast | ✅ |
 | 3 | Signals + synthetic history | |
 | 4 | First agents: triage + PR risk, governance tiers | |
 | 5 | Forecasting: delivery forecasts, planner agent | |

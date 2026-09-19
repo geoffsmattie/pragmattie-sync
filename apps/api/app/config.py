@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     app_name: str = "PragMattie Sync CRM API"
     environment: str = "local"
     # SQLAlchemy URL. MySQL in Docker by default; tests override with SQLite.
-    database_url: str = "mysql+pymysql://pragmattie_sync:pragmattie_sync@localhost:3306/pragmattie_sync"
+    database_url: str = (
+        "mysql+pymysql://pragmattie_sync:pragmattie_sync@localhost:3306/pragmattie_sync"
+    )
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

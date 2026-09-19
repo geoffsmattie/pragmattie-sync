@@ -57,6 +57,7 @@ jobs:
           cache-dependency-path: apps/api/requirements.txt
       - run: pip install -r requirements.txt
       - run: alembic upgrade head
+      - run: python -m app.seed
       - run: alembic downgrade base
 
   web:
