@@ -93,31 +93,38 @@ npm test && npm run build
 - CI also runs both migration histories against a real MySQL 8.4 in one job
   (`alembic upgrade head` → seed/synth → `alembic check` → `alembic downgrade base`, for both).
 - Ruff: line length 100, rules `E,F,I,B,UP`, target py312.
-- **TODO:** no linter/formatter is configured for the web app (ESLint/Prettier not decided).
+- Web formatter: **Prettier** (decided 2026-09-19). **TODO:** it isn't installed or configured yet —
+  `apps/web` has no `prettier` dependency, config file or CI step. No web linter (e.g. ESLint)
+  has been chosen.
 
 ## Branch and commit conventions
 
-Settled (from how we've worked so far):
+Settled:
 
 - `main` is protected; all changes land through a **pull request** with green CI.
   Required checks: **API (lint + tests)**, **API (migrations on MySQL)**, **Web (tests + build)**,
   plus **Orchestrator (lint + tests)** once it has run on the Phase 3 PR.
-  (The job names match `.github/workflows/ci.yml`, but the protection rule itself lives in
-  GitHub settings, not the repo — **TODO:** confirm it under Settings → Branches.)
+  (The job names match `.github/workflows/ci.yml`. The protection rule itself lives in GitHub
+  settings, not the repo; Geoff confirmed it on 2026-09-19.)
+- **Required approvals on `main`: zero, for now** (Geoff is the only contributor). Revisit when
+  Phase 4 enforces the governance tiers below, since T1–T3 need human approvals.
 - **One branch per phase**, cut from an up-to-date `main`: `phase-<n>-<topic>`
   (e.g. `phase-2-crm`, `phase-3-signals`). Delete the branch after merge.
-- Commit messages so far are short, sentence-case summaries, with a phase prefix for phase
-  work: `Phase 2: CRM screens and demo data`, `Rename to PragMattie Sync`.
-- Geoff commits and pushes with **GitHub Desktop**. Claude writes files into the folder and
-  does **not** run git commands that write to `.git` on Geoff's machine.
+- **Non-phase work** (fixes and chores between phases): `non-phase-work-<topic>`
+  (e.g. `non-phase-work-fix-lead-filter`), cut from an up-to-date `main`. Delete after merge.
+- **Merge strategy: merge commit** (as PR #1 did), not squash.
+- **Commit format: Conventional Commits** — `type(scope): description`, e.g.
+  `feat(api): add lead conversion endpoint`, `docs: add CLAUDE.md project guidance`. Adopted
+  2026-09-19; earlier commits (`Phase 2: CRM screens and demo data`) keep their old style.
+- Geoff pushes with **GitHub Desktop**. Claude may stage and commit when Geoff asks, but never
+  unprompted, and does not push.
+- **No attribution lines** (`Co-Authored-By`, `Claude-Session`, "Generated with…") in commit
+  messages or PR descriptions.
 
 Not yet decided:
 
-- **TODO:** branch naming for non-phase work (fixes, chores between phases).
-- **TODO:** whether to adopt a formal commit format (e.g. Conventional Commits).
-- **TODO:** merge strategy — PR #1 used a merge commit; squash vs merge isn't settled.
-- **TODO:** required approvals on `main` (currently 0 while Geoff is the only contributor;
-  this conflicts with T1–T3 below once the tiers are enforced).
+- **TODO:** how Conventional Commits and the phase prefix fit together — whether the phase
+  becomes a scope (e.g. `feat(phase-3): …`) or is dropped from commit messages.
 
 ## Governance tiers (from the blueprint)
 
@@ -138,18 +145,21 @@ work always gets a person. **Status: designed, not yet built — implementation 
   decision is written to an audit table with its inputs, scores and the tier applied.
 - Tiers will live in `orchestrator/policies/tiers.yaml` so they can be changed without code.
 - Agents never merge, deploy or close issues beyond what their tier allows.
+- **Highest tier wins** when several rows match (confirmed by Geoff, 2026-09-19): e.g. a
+  low-risk PR with a schema migration is T3.
+- **Approvers:** the "senior human" (T2) and the "code owner" (T3) are both **Geoff**
+  (decided 2026-09-19). There is no `CODEOWNERS` file yet.
+- **Deploy column:** a deploy-only gate that stays dormant (stubbed) in local runs and only
+  fires if a real release pipeline is triggered on GitHub (decided 2026-09-19). No such pipeline
+  exists — the project is local-only — so today the gate is always stubbed.
 
 Open items:
 
-- **TODO:** confirm that when several rows match, the highest tier wins (e.g. a low-risk PR
-  with a schema migration → T3). The blueprint implies this but doesn't state it.
+- **TODO:** T3 needs "2 humans incl. code owner", but Geoff is the only human on the repo and is
+  both approver types. Decide how the demo satisfies (or simulates) a second human.
 - **TODO:** `orchestrator/policies/tiers.yaml` doesn't exist yet (Phase 4).
 - **TODO:** the risk score (0–100) comes from the Phase 4 PR risk model, which isn't built;
   until then no PR has a real tier.
-- **TODO:** who counts as a "senior human" (T2) and the "code owner" (T3) — there is no
-  `CODEOWNERS` file and currently only one human on the repo.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
-- **TODO:** what the Deploy column gates in a local-only demo (no real deploys exist); the
-  release-gate agent is Phase 6.
 - **TODO:** where the audit log lives and how overrides are recorded (table/labels not designed).
