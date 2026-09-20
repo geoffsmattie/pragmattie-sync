@@ -95,6 +95,10 @@ class PullRequest(Base):
     additions: Mapped[int] = mapped_column(Integer, default=0)
     deletions: Mapped[int] = mapped_column(Integer, default=0)
     touches_migration: Mapped[bool] = mapped_column(Boolean, default=False)
+    # File facts the risk score reads (see sdlc/changes.py).
+    test_files_changed: Mapped[int] = mapped_column(Integer, default=0)
+    docs_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    modules_touched: Mapped[int] = mapped_column(Integer, default=1)
     review_count: Mapped[int] = mapped_column(Integer, default=0)
     first_review_hours: Mapped[float | None] = mapped_column(Float)
     rework_commits: Mapped[int] = mapped_column(Integer, default=0)

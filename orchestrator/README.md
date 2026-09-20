@@ -12,7 +12,8 @@ database to keep what it learns.
 | `sdlc/backlog.py` + `backlog/backlog.yaml` | 3 | Creates the product backlog as labelled GitHub Issues |
 | `sdlc/metrics.py`, `sdlc/api.py` | 3 | Delivery metrics (DORA, velocity, cycle time, CI health, risk by module) and their API |
 | `sdlc/agents/` | 4-6 | Triage, PR risk, forecaster, planner, test selector, release gate |
-| `policies/` | 4 | Governance tiers (`tiers.yaml`): how much human approval each risk level needs |
+| `policies/tiers.yaml` + `sdlc/tiers.py` | 4 | Governance tiers: score bands, floors, caps and what each tier requires; the loader validates it |
+| `sdlc/changes.py` | 4 | Classifies the files a PR changed (tests, docs-only, migrations, modules) for the risk score |
 | `policies/approvers.yaml` + `sdlc/approver.py` | 4 | Simulated second approver for tier T3, manual only, recorded as `simulated` in `sdlc_approvals` |
 
 ## Everyday commands
@@ -27,7 +28,7 @@ docker compose exec orchestrator python -m sdlc.backlog --apply
 # Pull the latest issues, PRs, reviews and CI jobs from GitHub
 docker compose exec orchestrator python -m sdlc.signals.github
 
-# Regenerate the synthetic history (dates move forward to today)
+# Regenerate the synthetic history (dates move forward to today; also clears simulated approvals)
 docker compose exec orchestrator python -m sdlc.synth --reset
 
 # Simulated second approver for tier T3 (manual only)

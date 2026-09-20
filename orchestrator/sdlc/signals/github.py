@@ -18,6 +18,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sdlc.changes import classify_files, infer_module
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError, parse_time
 from sdlc.tables import CIRun, Engineer, Issue, PullRequest
@@ -32,15 +33,6 @@ JOB_SUITES = {
     "Orchestrator (lint + tests)": "orchestrator",
 }
 
-# Infer a module from file paths when a PR has no module: label.
-PATH_MODULES = [
-    (re.compile(r"(^|/)(leads|lead)[^/]*\b"), "leads"),
-    (re.compile(r"(^|/)accounts?[^/]*\b|AccountDetail"), "accounts"),
-    (re.compile(r"(^|/)(opportunities|pipeline)[^/]*|PipelineView"), "pipeline"),
-    (re.compile(r"forecast", re.I), "forecasting"),
-    (re.compile(r"^orchestrator/"), "orchestrator"),
-]
-
 
 def labels_of(item: dict) -> dict[str, str]:
     """{"module": "leads", "type": "bug", ...} from labels like "module:leads"."""
@@ -53,16 +45,6 @@ def labels_of(item: dict) -> dict[str, str]:
         else:
             out[name] = "true"
     return out
-
-
-def infer_module(paths: list[str]) -> str:
-    votes: dict[str, int] = {}
-    for path in paths:
-        for pattern, module in PATH_MODULES:
-            if pattern.search(path):
-                votes[module] = votes.get(module, 0) + 1
-                break
-    return max(votes, key=votes.get) if votes else "platform"
 
 
 class Collector:
@@ -153,6 +135,7 @@ class Collector:
                 )
             merged_at = parse_time(detail.get("merged_at"))
             author = self.engineer(item.get("user"))
+            facts = classify_files(files)
             self._upsert(
                 PullRequest,
                 f"pr-{number}",
@@ -164,7 +147,10 @@ class Collector:
                 files_changed=detail.get("changed_files", len(files)),
                 additions=detail.get("additions", 0),
                 deletions=detail.get("deletions", 0),
-                touches_migration=any("alembic/versions/" in f for f in files),
+                touches_migration=facts.touches_migration,
+                test_files_changed=facts.test_files_changed,
+                docs_only=facts.docs_only,
+                modules_touched=facts.modules_touched,
                 review_count=len(reviews),
                 first_review_hours=round((submitted[0] - created).total_seconds() / 3600, 1)
                 if submitted

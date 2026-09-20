@@ -1,0 +1,63 @@
+# Governance tiers: how much human oversight a pull request needs, by predicted risk.
+# See CLAUDE.md ("Governance tiers") and the blueprint's Phase 4 spec. Edit this file to change
+# thresholds, floors or approvals; no code change is needed. sdlc/tiers.py validates it on load.
+
+# A PR's 0-100 risk score lands in the highest band whose `min` it reaches.
+score_bands:
+  - {tier: T0, min: 0}
+  - {tier: T1, min: 20}
+  - {tier: T2, min: 50}
+  - {tier: T3, min: 80}
+
+# Floors set a minimum tier whatever the score says. When several match, the highest wins.
+# `when` keys: modules (any of), touches_migration, docs_only.
+floors:
+  - {name: billing_auth, tier: T3, when: {modules: [billing_auth]}}
+  - {name: schema_migration, tier: T3, when: {touches_migration: true}}
+  - {name: pipeline_or_forecasting, tier: T2, when: {modules: [pipeline, forecasting]}}
+
+# Caps set a maximum tier, and only apply when no floor does.
+caps:
+  - {name: docs_or_config_only, tier: T0, when: {docs_only: true}}
+
+# If the agent errors, times out or returns malformed output, a PR falls back to its floor
+# tier, or to this one when no floor applies. The check fails closed; it never fails open.
+fallback_tier: T2
+
+# What each tier requires. `humans` counts human approvals (the simulated approver in
+# approvers.yaml can fill the second seat of T3). `agent_check` says what the risk agent may do
+# with the risk-gate check: passes_alone (no human needed), passes_after_approvals (once the
+# approvals exist), or reports_only (a human signs off; the agent never passes it).
+tiers:
+  T0:
+    name: Auto
+    humans: 0
+    senior_human: false
+    code_owner: false
+    tests: selected suites
+    deploy: automatic
+    agent_check: passes_alone
+  T1:
+    name: Light
+    humans: 1
+    senior_human: false
+    code_owner: false
+    tests: selected suites
+    deploy: automatic after merge
+    agent_check: passes_after_approvals
+  T2:
+    name: Standard
+    humans: 1
+    senior_human: true
+    code_owner: false
+    tests: full suite
+    deploy: release gate checks
+    agent_check: passes_after_approvals
+  T3:
+    name: Critical
+    humans: 2
+    senior_human: true
+    code_owner: true
+    tests: full suite + manual QA
+    deploy: human sign-off required
+    agent_check: reports_only

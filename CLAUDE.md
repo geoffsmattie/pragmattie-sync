@@ -182,11 +182,35 @@ docker compose exec orchestrator python -m sdlc.approver approve <pr>           
   `request`. The PR risk agent should call `request_approval` when it assigns T3, and the
   `risk-gate` check should stay pending until the approval is recorded.
 
+### Phase 4 decisions (2026-09-20)
+
+The Phase 4 build spec lives in the blueprint doc, which is kept out of this public repo.
+Decisions made while building it:
+
+- **Polling, not webhooks.** The orchestrator polls GitHub (about every 30 seconds), because a
+  local-only laptop can't receive webhooks.
+- **Human sign-off is a tick-box in the risk agent's PR comment.** GitHub won't let a PR's author
+  approve it, so don't turn on "require review from code owners" in the ruleset: with one human
+  it would lock Geoff out. A `CODEOWNERS` file may still be added for documentation.
+- **`risk-gate` is a commit status**, so the GitHub token needs "Commit statuses: read and
+  write". Run in shadow mode first (`ORCHESTRATOR_MODE=off|shadow|enforce` in `.env`). Don't make
+  `risk-gate` a required check until shadow has run a full sprint, and give the repo admin a
+  ruleset bypass so a stopped local stack can't block every merge.
+- **Models:** Haiku 4.5 for triage, Sonnet 5 for the ±15 risk adjustment, ids kept in `.env`.
+  Every run records its tokens in the audit table. Geoff wants API usage and cost checked
+  periodically: report it at each Phase 4 milestone.
+- **"Docs or config only" (capped at T0) never includes** `orchestrator/policies/`,
+  `.github/workflows/` or dependency manifests, so a PR that edits governance, CI or
+  dependencies can't be capped at T0.
+- PRs carry `test_files_changed`, `docs_only` and `modules_touched` (from `sdlc/changes.py`).
+  An existing database needs `sdlc.synth --reset`, or a collector run, to fill them in.
+
 Open items:
 
-- **TODO:** `orchestrator/policies/tiers.yaml` doesn't exist yet (Phase 4).
-- **TODO:** the risk score (0–100) comes from the Phase 4 PR risk model, which isn't built;
-  until then no PR has a real tier.
+- **TODO:** the risk score (0–100): the stage-one rubric and Claude's ±15 adjustment are specified
+  in the blueprint but not built yet. `tiers.yaml` and its loader (`sdlc/tiers.py`) exist, but
+  until the score exists no PR has a real tier.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
-- **TODO:** where the audit log lives and how overrides are recorded (table/labels not designed).
+- **TODO:** the audit table `sdlc_agent_decisions` is designed in the blueprint (append-only, one
+  row per agent run) but not built yet.
