@@ -186,8 +186,12 @@ class AgentDecision(Base):
     """
 
     __tablename__ = "sdlc_agent_decisions"
+    # One decision per (agent, subject, commit, attempt): a failed run may be retried, and each
+    # retry is its own row, but the same attempt can never be recorded twice.
     __table_args__ = (
-        UniqueConstraint("agent", "subject_type", "subject_source", "subject_id", "head_sha"),
+        UniqueConstraint(
+            "agent", "subject_type", "subject_source", "subject_id", "head_sha", "attempt"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -201,6 +205,7 @@ class AgentDecision(Base):
     subject_source: Mapped[str] = mapped_column(String(20))  # synthetic | github
     subject_id: Mapped[int] = mapped_column(Integer, index=True)  # the PR or issue number
     head_sha: Mapped[str | None] = mapped_column(String(40))  # the commit scored
+    attempt: Mapped[int] = mapped_column(Integer, default=1)  # 2, 3... after a failed run
     trigger: Mapped[str] = mapped_column(String(20))  # poll | schedule | manual
     inputs_digest: Mapped[dict | None] = mapped_column(JSON)
     raw_score: Mapped[int | None] = mapped_column(Integer)

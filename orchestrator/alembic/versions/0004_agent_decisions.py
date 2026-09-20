@@ -30,6 +30,7 @@ def upgrade() -> None:
         sa.Column("subject_source", sa.String(length=20), nullable=False),
         sa.Column("subject_id", sa.Integer(), nullable=False),
         sa.Column("head_sha", sa.String(length=40), nullable=True),
+        sa.Column("attempt", sa.Integer(), nullable=False),
         sa.Column("trigger", sa.String(length=20), nullable=False),
         sa.Column("inputs_digest", sa.JSON(), nullable=True),
         sa.Column("raw_score", sa.Integer(), nullable=True),
@@ -51,7 +52,9 @@ def upgrade() -> None:
             ["sdlc_agent_decisions.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("agent", "subject_type", "subject_source", "subject_id", "head_sha"),
+        sa.UniqueConstraint(
+            "agent", "subject_type", "subject_source", "subject_id", "head_sha", "attempt"
+        ),
     )
     op.create_index(
         op.f("ix_sdlc_agent_decisions_agent"), "sdlc_agent_decisions", ["agent"], unique=False

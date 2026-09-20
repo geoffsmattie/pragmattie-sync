@@ -6,6 +6,7 @@ row in the same transaction as the action it records, so a decision and its effe
 
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sdlc.tables import AgentDecision, PullRequest
@@ -30,8 +31,25 @@ def record_decision(
         subject_source=pr.source,
         subject_id=pr.number,
         trigger=trigger,
-        **fields,
+        **{"attempt": 1, **fields},
     )
     db.add(decision)
     db.flush()
     return decision
+
+
+def decisions_for(db: Session, agent: str, pr: PullRequest, head_sha: str) -> list[AgentDecision]:
+    """Every attempt this agent made on this commit of this PR, oldest first."""
+    return list(
+        db.scalars(
+            select(AgentDecision)
+            .where(
+                AgentDecision.agent == agent,
+                AgentDecision.subject_type == "pr",
+                AgentDecision.subject_source == pr.source,
+                AgentDecision.subject_id == pr.number,
+                AgentDecision.head_sha == head_sha,
+            )
+            .order_by(AgentDecision.attempt)
+        )
+    )

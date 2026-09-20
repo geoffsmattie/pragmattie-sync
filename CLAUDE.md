@@ -178,9 +178,9 @@ docker compose exec orchestrator python -m sdlc.approver approve <pr>           
   running, say so instead of guessing; if nothing is waiting, say that.
 - **Claude never runs `approve`** unless Geoff names the PR in that same message, and runs
   `request` only when asked. Listing with `pending` is always fine.
-- Until Phase 4 nothing computes a PR's tier, so `pending` stays empty until someone runs
-  `request`. The PR risk agent should call `request_approval` when it assigns T3, and the
-  `risk-gate` check should stay pending until the approval is recorded.
+- The PR risk agent (`sdlc/runner.py`) calls `request_approval` when it assigns T3, so `pending`
+  fills in by itself once the agent runs. In enforce mode the `risk-gate` check stays pending until
+  the sign-off boxes are ticked and this approval is recorded.
 
 ### Phase 4 decisions (2026-09-20)
 
@@ -198,7 +198,9 @@ Decisions made while building it:
   ruleset bypass so a stopped local stack can't block every merge.
 - **Models:** Haiku 4.5 for triage, Sonnet 5 for the ±15 risk adjustment, ids kept in `.env`.
   Every run records its tokens in the audit table. Geoff wants API usage and cost checked
-  periodically: report it at each Phase 4 milestone.
+  periodically: report it at each Phase 4 milestone. Sonnet 5 rejects `temperature`, `top_p` and
+  `top_k` with a 400, so never send them; repeatability comes from a fixed prompt, a JSON schema,
+  medium effort and the clamp enforced in code. The blueprint's "low temperature" can't apply.
 - **"Docs or config only" (capped at T0) never includes** `orchestrator/policies/`,
   `.github/workflows/` or dependency manifests, so a PR that edits governance, CI or
   dependencies can't be capped at T0.
@@ -207,16 +209,26 @@ Decisions made while building it:
 
 Open items:
 
-- **TODO:** the PR risk agent isn't built: Claude's ±15 adjustment, polling GitHub, the PR
-  comment and the `risk-gate` status. What exists: the stage-one rubric (`sdlc/scoring.py`), tier
-  assignment (`sdlc/governance.py`) and calibration. `python -m sdlc.risk explain <pr>` scores
-  and tiers a PR by hand and `python -m sdlc.risk calibrate` grades the rubric on the history.
-  Nothing scores PRs automatically yet.
+- **TODO:** the PR risk agent is built and tested with Claude and GitHub mocked, but it has never
+  run for real. Next: a first live call (`python -m sdlc.runner try <pr> --yes`), then shadow mode
+  for a full sprint, then read the results before enforcing.
+  - Pieces: `sdlc/agents/llm.py` (one strict Claude call), `pr_risk.py` (score, the ±15 clamp, the
+    tier from code), `gate.py` (the `risk-gate` state), `comment.py` (the PR comment and its
+    sign-off boxes), `github_effects.py` (the only writes: one comment, one `tier:` label, the
+    status), and `sdlc/runner.py` (the poll loop).
+  - Start it with `docker compose --profile agents up -d`. `ORCHESTRATOR_MODE` ships as `off`,
+    which does nothing at all; `dry-run <pr>` shows the exact request and a cost ceiling and calls
+    nothing; `try <pr>` needs `--yes` to spend money and writes nothing.
+  - A new commit is assessed once and its sign-off boxes start empty. A failed run fails closed to
+    the floor tier or T2 and is retried up to three times, five minutes apart.
+  - The agent never merges, approves, closes or pushes, and the model can't name a tier.
+  - Not done: the token needs "Commit statuses" and "Pull requests" write access before shadow
+    mode can post; CI failures reach the score only when the collector runs.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
-- **TODO:** the audit table `sdlc_agent_decisions` exists (append-only, one row per agent run) and
-  `explain --record` writes to it, but the agents that must write a row on every run aren't
-  built, and the Decision log tab in the web app doesn't exist yet.
+- **TODO:** the audit table `sdlc_agent_decisions` (append-only, one row per agent run, with an
+  `attempt` number so a failed run can be retried) is written by the risk agent on every run. The
+  triage agent and the Decision log tab in the web app don't exist yet.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
   depending only on the random draw. So the rubric is graded on 30 generated histories pooled
   (`python -m sdlc.risk calibrate --generated 30`). The bars were fixed on 2026-09-20, before the
