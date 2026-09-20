@@ -1,9 +1,10 @@
 from sqlalchemy import func, select
 
 from sdlc import approver
+from sdlc.audit import record_decision
 from sdlc.metrics import ci_health, quality_by_module, sprint_velocity
 from sdlc.synth import build, has_synthetic, reset
-from sdlc.tables import Approval, Incident, PullRequest, Sprint
+from sdlc.tables import AgentDecision, Approval, Incident, PullRequest, Sprint
 from tests.conftest import NOW
 
 
@@ -63,15 +64,27 @@ def test_repeatable_and_resettable(db, history):
     assert build(db, now=NOW) == history
 
 
-def test_reset_also_clears_approvals_on_synthetic_prs(db, history):
+def test_reset_also_clears_approvals_and_audit_rows_on_synthetic_prs(db, history):
     pr = db.scalar(select(PullRequest).where(PullRequest.state == "open"))
     simulated = approver.load_approvers()["simulated-second-human"]
     approver.request_approval(db, pr, simulated, "T3")
     db.commit()
     assert db.scalar(select(func.count()).select_from(Approval)) == 1
 
+    first = record_decision(db, agent="pr_risk", agent_version="v1", pr=pr, trigger="manual")
+    record_decision(
+        db,
+        agent="pr_risk",
+        agent_version="v1",
+        pr=pr,
+        trigger="manual",
+        supersedes_id=first.id,  # a correction pointing at an earlier row
+    )
+    db.commit()
+
     reset(db)  # MySQL would refuse to delete the PR while the approval still pointed at it
     assert db.scalar(select(func.count()).select_from(Approval)) == 0
+    assert db.scalar(select(func.count()).select_from(AgentDecision)) == 0
     assert not has_synthetic(db)
 
 

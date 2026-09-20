@@ -14,6 +14,10 @@ database to keep what it learns.
 | `sdlc/agents/` | 4-6 | Triage, PR risk, forecaster, planner, test selector, release gate |
 | `policies/tiers.yaml` + `sdlc/tiers.py` | 4 | Governance tiers: score bands, floors, caps and what each tier requires; the loader validates it |
 | `sdlc/changes.py` | 4 | Classifies the files a PR changed (tests, docs-only, migrations, modules) for the risk score |
+| `sdlc/scoring.py` | 4 | Stage one of the risk score: ten weighted signals, point-in-time, capped at 100 |
+| `sdlc/governance.py` | 4 | Score to tier: bands, floors (highest wins), the docs-only cap, and the fail-safe fallback |
+| `sdlc/calibration.py` + `sdlc/risk.py` | 4 | `python -m sdlc.risk explain <pr>` and `calibrate`: read-only views of the score |
+| `sdlc/audit.py` | 4 | Append-only audit trail (`sdlc_agent_decisions`), one row per agent run |
 | `policies/approvers.yaml` + `sdlc/approver.py` | 4 | Simulated second approver for tier T3, manual only, recorded as `simulated` in `sdlc_approvals` |
 
 ## Everyday commands
@@ -30,6 +34,10 @@ docker compose exec orchestrator python -m sdlc.signals.github
 
 # Regenerate the synthetic history (dates move forward to today; also clears simulated approvals)
 docker compose exec orchestrator python -m sdlc.synth --reset
+
+# Score and tier a PR by hand, or grade the rubric against the history (read-only)
+docker compose exec orchestrator python -m sdlc.risk explain 485
+docker compose exec orchestrator python -m sdlc.risk calibrate
 
 # Simulated second approver for tier T3 (manual only)
 docker compose exec orchestrator python -m sdlc.approver pending           # what is waiting for you

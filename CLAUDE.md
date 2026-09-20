@@ -207,10 +207,16 @@ Decisions made while building it:
 
 Open items:
 
-- **TODO:** the risk score (0–100): the stage-one rubric and Claude's ±15 adjustment are specified
-  in the blueprint but not built yet. `tiers.yaml` and its loader (`sdlc/tiers.py`) exist, but
-  until the score exists no PR has a real tier.
+- **TODO:** the PR risk agent isn't built: Claude's ±15 adjustment, polling GitHub, the PR
+  comment and the `risk-gate` status. What exists: the stage-one rubric (`sdlc/scoring.py`), tier
+  assignment (`sdlc/governance.py`) and calibration. `python -m sdlc.risk explain <pr>` scores
+  and tiers a PR by hand and `python -m sdlc.risk calibrate` grades the rubric on the history.
+  Nothing scores PRs automatically yet.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
-- **TODO:** the audit table `sdlc_agent_decisions` is designed in the blueprint (append-only, one
-  row per agent run) but not built yet.
+- **TODO:** the audit table `sdlc_agent_decisions` exists (append-only, one row per agent run) and
+  `explain --record` writes to it, but the agents that must write a row on every run aren't
+  built, and the Decision log tab in the web app doesn't exist yet.
+- The calibration bars pass on the synthetic history, but its incidents are generated from the
+  same factors the rubric reads, so that is a wiring check, not proof the score predicts real
+  incidents. Re-run `calibrate` once real GitHub history exists, and tune weights, never outcomes.

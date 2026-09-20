@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from sdlc.db import SessionLocal
 from sdlc.tables import (
+    AgentDecision,
     Approval,
     CIRun,
     Deployment,
@@ -414,6 +415,11 @@ def reset(db: Session) -> None:
     # Approvals point at pull requests; MySQL won't delete a PR that still has one.
     synthetic_prs = select(PullRequest.id).where(PullRequest.source == SOURCE)
     db.execute(delete(Approval).where(Approval.pull_request_id.in_(synthetic_prs)))
+    # Audit rows name PRs by number, and the reset regenerates those numbers. A correction row
+    # points at an earlier one, so unlink them first: MySQL checks that row by row.
+    synthetic_rows = AgentDecision.subject_source == SOURCE
+    db.execute(update(AgentDecision).where(synthetic_rows).values(supersedes_id=None))
+    db.execute(delete(AgentDecision).where(synthetic_rows))
     db.execute(update(Issue).where(Issue.source == SOURCE).values(sprint_id=None))
     for model in (Incident, CIRun, Deployment, PullRequest, Issue, Sprint, Engineer):
         db.execute(delete(model).where(model.source == SOURCE))
