@@ -232,7 +232,9 @@ def prepare(runner: Runner, number: int):
 
 
 def estimate(system: str, user: str, max_tokens: int) -> str:
-    tokens_in = (len(system) + len(user)) // 4  # roughly four characters a token
+    # Measured on the first live call: code, JSON and markdown run about two characters a
+    # token, so this errs high on purpose (it is a ceiling, not a forecast).
+    tokens_in = (len(system) + len(user)) // 2
     ceiling = tokens_in * INPUT_RATE / 1e6 + max_tokens * OUTPUT_RATE / 1e6
     return (
         f"about {tokens_in:,} input tokens; at most {max_tokens:,} output tokens; "
@@ -254,7 +256,8 @@ def main(argv: list[str] | None = None) -> None:
 
     settings = get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per request is noise
+    for noisy in ("httpx", "httpx2"):  # one log line per request is noise
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     runner_mode = settings.orchestrator_mode
     try:
         runner = Runner(GitHubClient(), StructuredLLM(), load_policy(), runner_mode)
