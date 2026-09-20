@@ -1,8 +1,10 @@
 // Base URL for the FastAPI backend. Override with VITE_API_URL in apps/web/.env.local.
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+// The orchestrator (predictive SDLC layer) runs as its own service.
+export const ORCH_URL = import.meta.env.VITE_ORCH_URL ?? 'http://localhost:8001'
 
-function buildUrl(path, params) {
-  const url = new URL(`${API_URL}${path}`)
+function buildUrl(path, params, base = API_URL) {
+  const url = new URL(`${base}${path}`)
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value === undefined || value === null || value === '') continue
     for (const v of Array.isArray(value) ? value : [value]) url.searchParams.append(key, v)
@@ -25,6 +27,11 @@ async function handle(response, path) {
 
 export async function getJson(path, params) {
   return handle(await fetch(buildUrl(path, params)), path)
+}
+
+/** GET from the orchestrator service instead of the CRM API. */
+export async function getOrchJson(path, params) {
+  return handle(await fetch(buildUrl(path, params, ORCH_URL)), path)
 }
 
 export async function sendJson(method, path, body) {

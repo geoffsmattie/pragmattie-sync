@@ -1,6 +1,7 @@
 # One command starts the whole stack:  docker compose up --build
 #   Web app  -> http://localhost:5173
 #   API docs -> http://localhost:8000/docs
+#   Orchestrator API docs -> http://localhost:8001/docs
 #   MySQL    -> localhost:3307 (from your PC; containers use db:3306)
 
 services:
@@ -32,10 +33,26 @@ services:
       db:
         condition: service_healthy
 
+  # The predictive SDLC layer: engineering signals, predictions and (later) agents.
+  orchestrator:
+    build: ./orchestrator
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./orchestrator:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
   web:
     build: ./apps/web
     environment:
       VITE_API_URL: http://localhost:8000
+      VITE_ORCH_URL: http://localhost:8001
       CHOKIDAR_USEPOLLING: "true"        # reliable hot reload on Windows
     ports:
       - "5173:5173"
@@ -44,6 +61,7 @@ services:
       - /app/node_modules
     depends_on:
       - api
+      - orchestrator
 
 volumes:
   mysql-data:

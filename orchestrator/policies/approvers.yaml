@@ -1,0 +1,17 @@
+# Simulated approvers for the governance tiers (see CLAUDE.md, "Governance tiers").
+#
+# Geoff is the only human on this repo, but tier T3 needs "2 humans incl. code owner".
+# A simulated approver stands in for the second human. It is controlled by Geoff and is
+# MANUAL ONLY: it approves a pull request only when he runs
+#   python -m sdlc.approver approve <pr>
+# Every approval it records is labelled source=simulated, so the dashboard and audit log
+# can always say how much of the process is simulated.
+#
+# `applies_to_tiers` lists the tiers that need a second human. T2 needs one senior human
+# (Geoff himself), so it is not listed.
+
+approvers:
+  - id: simulated-second-human
+    name: Simulated second approver
+    controlled_by: geoff
+    applies_to_tiers: [T3]

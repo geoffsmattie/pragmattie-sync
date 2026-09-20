@@ -7,7 +7,8 @@ const nav = [
   { title: 'Accounts', icon: 'mdi-domain', to: '/accounts' },
   { title: 'Pipeline', icon: 'mdi-view-column-outline', to: '/pipeline' },
   { title: 'Forecast', icon: 'mdi-chart-line', to: '/forecast' },
-  { title: 'Orchestration', icon: 'mdi-robot-outline', phase: 4 },
+  { header: 'Delivery intelligence' },
+  { title: 'Engineering signals', icon: 'mdi-pulse', to: '/engineering' },
 ]
 </script>
 
@@ -22,16 +23,16 @@ const nav = [
 
     <v-navigation-drawer permanent width="220">
       <v-list nav density="comfortable">
-        <v-list-item
-          v-for="item in nav"
-          :key="item.title"
-          :to="item.to"
-          :exact="item.to === '/'"
-          :prepend-icon="item.icon"
-          :title="item.title"
-          :subtitle="item.phase ? `Coming in Phase ${item.phase}` : undefined"
-          :disabled="!item.to"
-        />
+        <template v-for="item in nav" :key="item.title ?? item.header">
+          <v-list-subheader v-if="item.header" class="mt-2">{{ item.header }}</v-list-subheader>
+          <v-list-item
+            v-else
+            :to="item.to"
+            :exact="item.to === '/'"
+            :prepend-icon="item.icon"
+            :title="item.title"
+          />
+        </template>
       </v-list>
     </v-navigation-drawer>
 
@@ -45,6 +46,25 @@ const nav = [
 
 
 <style>
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 13px;
+  color: #5b6573;
+  margin-bottom: 8px;
+}
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
 .kpi-value {
   font-size: 28px;
   font-weight: 700;

@@ -153,10 +153,35 @@ work always gets a person. **Status: designed, not yet built — implementation 
   fires if a real release pipeline is triggered on GitHub (decided 2026-09-19). No such pipeline
   exists — the project is local-only — so today the gate is always stubbed.
 
+### Simulated second approver
+
+T3 needs "2 humans incl. code owner", but Geoff is the only human, so a **simulated approver**
+fills the second seat and keeps the process from locking (decided 2026-09-19).
+
+- Declared in `orchestrator/policies/approvers.yaml`; covers **T3 only** (T2 needs one senior
+  human, which is Geoff himself). Code: `orchestrator/sdlc/approver.py`; table `sdlc_approvals`.
+- **Manual only.** It approves a PR only when Geoff runs `approve` for that PR. There is no
+  auto-approve.
+- Every approval is stored with `source = simulated`. The UI and audit log must always show it
+  as simulated, never as a real human approval.
+
+```bash
+docker compose exec orchestrator python -m sdlc.approver pending                       # what's waiting on me
+docker compose exec orchestrator python -m sdlc.approver request <pr> --tier T3 --reason "..."
+docker compose exec orchestrator python -m sdlc.approver approve <pr>                  # add --source if the number is ambiguous
+```
+
+- **The reminder prompt:** when Geoff asks **"What approvals do I have awaiting for me?"** (or
+  close to it), run the `pending` command above and report what it lists. If the stack isn't
+  running, say so instead of guessing; if nothing is waiting, say that.
+- **Claude never runs `approve`** unless Geoff names the PR in that same message, and runs
+  `request` only when asked. Listing with `pending` is always fine.
+- Until Phase 4 nothing computes a PR's tier, so `pending` stays empty until someone runs
+  `request`. The PR risk agent should call `request_approval` when it assigns T3, and the
+  `risk-gate` check should stay pending until the approval is recorded.
+
 Open items:
 
-- **TODO:** T3 needs "2 humans incl. code owner", but Geoff is the only human on the repo and is
-  both approver types. Decide how the demo satisfies (or simulates) a second human.
 - **TODO:** `orchestrator/policies/tiers.yaml` doesn't exist yet (Phase 4).
 - **TODO:** the risk score (0–100) comes from the Phase 4 PR risk model, which isn't built;
   until then no PR has a real tier.
