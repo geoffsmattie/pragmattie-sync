@@ -20,7 +20,7 @@ onMounted(async () => {
 const phases = [
   { n: 1, title: 'Foundation', done: true },
   { n: 2, title: 'The CRM', done: true },
-  { n: 3, title: 'Signals + synthetic history' },
+  { n: 3, title: 'Signals + synthetic history', done: true },
   { n: 4, title: 'First agents: triage + PR risk' },
   { n: 5, title: 'Forecasting' },
   { n: 6, title: 'Polish + client demo' },

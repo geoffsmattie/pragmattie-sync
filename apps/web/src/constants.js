@@ -48,3 +48,17 @@ export const FORECAST_COLORS = {
   negotiation: '#1B8A94',
   proposal: '#6FBAC1',
 }
+
+// Two steps of the same teal ramp for "target vs achieved" and "typical vs slow tail" pairs.
+export const ORDINAL_PAIR = { light: '#6FBAC1', dark: '#0E5A61' }
+
+export const MODULE_LABELS = {
+  leads: 'Leads',
+  accounts: 'Accounts',
+  pipeline: 'Pipeline',
+  forecasting: 'Forecasting',
+  integrations: 'Integrations',
+  billing_auth: 'Billing & Auth',
+  platform: 'Platform',
+  orchestrator: 'Orchestrator',
+}

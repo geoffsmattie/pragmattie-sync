@@ -1,11 +1,19 @@
+"""Migrations for the orchestrator's sdlc_ tables.
+
+The CRM (apps/api) shares this database with its own Alembic history, so this history
+uses its own version table and only ever looks at tables starting with "sdlc_".
+"""
+
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from app import models  # noqa: F401  (registers models on Base.metadata)
-from app.config import get_settings
-from app.db import Base
+from sdlc import tables  # noqa: F401  (registers tables on Base.metadata)
+from sdlc.config import get_settings
+from sdlc.db import TABLE_PREFIX, Base
+
+VERSION_TABLE = "sdlc_alembic_version"
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
@@ -16,10 +24,8 @@ target_metadata = Base.metadata
 
 
 def include_name(name, type_, parent_names) -> bool:
-    # The orchestrator keeps its own "sdlc_" tables (and migration history) in this
-    # database; the CRM's migrations leave them alone.
     if type_ == "table":
-        return not name.startswith("sdlc_")
+        return name.startswith(TABLE_PREFIX) and name != VERSION_TABLE
     return True
 
 
@@ -27,6 +33,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
+        version_table=VERSION_TABLE,
         include_name=include_name,
     )
     with context.begin_transaction():
@@ -41,7 +48,10 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata, include_name=include_name
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table=VERSION_TABLE,
+            include_name=include_name,
         )
         with context.begin_transaction():
             context.run_migrations()

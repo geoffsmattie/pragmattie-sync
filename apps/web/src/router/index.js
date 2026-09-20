@@ -13,7 +13,11 @@ export const routes = [
   },
   { path: '/pipeline', name: 'pipeline', component: () => import('../views/PipelineView.vue') },
   { path: '/forecast', name: 'forecast', component: () => import('../views/ForecastView.vue') },
-  // Phase 4 adds: /orchestration (the predictive SDLC dashboard)
+  {
+    path: '/engineering',
+    name: 'engineering',
+    component: () => import('../views/EngineeringView.vue'),
+  },
 ]
 
 export default createRouter({ history: createWebHistory(), routes })
