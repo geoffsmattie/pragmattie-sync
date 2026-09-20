@@ -38,6 +38,7 @@ docker compose exec orchestrator python -m sdlc.synth --reset
 # Score and tier a PR by hand, or grade the rubric against the history (read-only)
 docker compose exec orchestrator python -m sdlc.risk explain 485
 docker compose exec orchestrator python -m sdlc.risk calibrate
+docker compose exec orchestrator python -m sdlc.risk calibrate --generated 30   # 30 histories, pooled
 
 # Simulated second approver for tier T3 (manual only)
 docker compose exec orchestrator python -m sdlc.approver pending           # what is waiting for you

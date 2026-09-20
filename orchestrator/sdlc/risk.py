@@ -2,7 +2,8 @@
 
 Usage:
     python -m sdlc.risk explain 485 [--source synthetic] [--record]
-    python -m sdlc.risk calibrate
+    python -m sdlc.risk calibrate                 # grade this database's history
+    python -m sdlc.risk calibrate --generated 30  # grade 30 generated histories, pooled
 
 `explain --record` appends the decision to the audit table (sdlc_agent_decisions). Nothing here
 changes a pull request or GitHub; it only reads, and records when asked.
@@ -12,7 +13,7 @@ import argparse
 
 from sdlc.approver import ApproverError, find_pull_request
 from sdlc.audit import record_decision
-from sdlc.calibration import calibrate, facts_of, format_report
+from sdlc.calibration import calibrate, calibrate_many, facts_of, format_many, format_report
 from sdlc.db import SessionLocal
 from sdlc.governance import assign_tier
 from sdlc.scoring import MAX_POINTS, compute_features, features_digest, score_features
@@ -61,8 +62,14 @@ def main(argv: list[str] | None = None) -> None:
     one.add_argument("number", type=int, help="pull request number")
     one.add_argument("--source", choices=SOURCES, help="needed if the number is ambiguous")
     one.add_argument("--record", action="store_true", help="append the decision to the audit table")
-    commands.add_parser(
+    grade = commands.add_parser(
         "calibrate", help="score every merged PR in the history and grade the rubric"
+    )
+    grade.add_argument(
+        "--generated",
+        type=int,
+        metavar="N",
+        help="instead grade N freshly generated histories, pooled (no database needed)",
     )
     args = parser.parse_args(argv)
 
@@ -70,6 +77,8 @@ def main(argv: list[str] | None = None) -> None:
         with SessionLocal() as db:
             if args.command == "explain":
                 print(explain(db, args.number, args.source, args.record))
+            elif args.generated:
+                print(format_many(calibrate_many(load_policy(), args.generated)))
             else:
                 print(format_report(calibrate(db, load_policy())))
     except ApproverError as err:

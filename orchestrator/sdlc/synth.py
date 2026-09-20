@@ -126,8 +126,10 @@ def _workday_after(moment: datetime, hours: float) -> datetime:
     return result
 
 
-def build(db: Session, now: datetime | None = None) -> dict[str, int]:
-    rng = random.Random(SEED)
+def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[str, int]:
+    """Generate the history. Another `seed` gives different random draws (and incidents), which
+    is how the risk rubric is calibrated across many histories instead of one lucky draw."""
+    rng = random.Random(seed)
     now = now or datetime.now().replace(microsecond=0)
     today = now.date()
 
@@ -218,7 +220,17 @@ def build(db: Session, now: datetime | None = None) -> dict[str, int]:
                     continue
                 pr_number += 1
                 pr, risk = _make_pr(
-                    rng, pr_number, n, pr_total, issue, author, personas, engineers, opened, now
+                    rng,
+                    pr_number,
+                    n,
+                    pr_total,
+                    issue,
+                    author,
+                    personas,
+                    engineers,
+                    opened,
+                    now,
+                    seed,
                 )
                 db.add(pr)
                 db.flush()
@@ -234,7 +246,7 @@ def build(db: Session, now: datetime | None = None) -> dict[str, int]:
     return counts
 
 
-def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opened, now):
+def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opened, now, seed):
     module = issue.module
     size = max(5, int(rng.lognormvariate(math.log(author.pr_size), 0.7)))
     if issue.type == "bug":
@@ -267,7 +279,7 @@ def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opene
     deletions = int(size * rng.uniform(0.1, 0.6))
 
     # File facts come from their own stream, so adding them never shifts the draws above.
-    frng = random.Random(f"{SEED}:files:{number}")
+    frng = random.Random(f"{seed}:files:{number}")
     docs_only = issue.type == "chore" and frng.random() < 0.6
     test_files = 0
     modules_touched = 1

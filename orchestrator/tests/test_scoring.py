@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 
@@ -137,6 +138,17 @@ def test_history_signals_only_use_what_was_known_before_the_pr_opened(db):
     # ...but one opened afterwards can.
     rates, team = scoring.module_rates(db, datetime(2026, 9, 15))
     assert team == 1.0 and rates["billing_auth"] == pytest.approx((1 + 1.0 * 10) / 11)
+
+
+def test_rates_survive_mysql_returning_decimals():
+    # MySQL's SUM() comes back as Decimal (or None for no rows); SQLite gives ints.
+    rates, team = scoring.rates_from_counts(
+        [("billing_auth", Decimal("10"), Decimal("2")), ("leads", 30, None)]
+    )
+    assert team == pytest.approx(2 / 40)
+    assert rates["billing_auth"] == pytest.approx((2 + team * 10) / 20)
+    assert rates["leads"] == pytest.approx((0 + team * 10) / 40)
+    assert all(isinstance(value, float) for value in [team, *rates.values()])
 
 
 def test_compute_features_reads_the_pr(db, history):

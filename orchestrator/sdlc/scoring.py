@@ -142,11 +142,18 @@ def module_rates(db: Session, reference: datetime) -> tuple[dict[str, float], fl
         .where(PullRequest.state == "merged", PullRequest.merged_at < reference)
         .group_by(PullRequest.module)
     ).all()
-    total = sum(n for _, n, _ in rows)
-    team = sum(hits or 0 for _, _, hits in rows) / total if total else 0.0
-    smoothed = {
-        module: ((hits or 0) + team * SHRINKAGE) / (n + SHRINKAGE) for module, n, hits in rows
-    }
+    return rates_from_counts(rows)
+
+
+def rates_from_counts(rows) -> tuple[dict[str, float], float]:
+    """Smoothed incident rate per module, from (module, merged PRs, incident PRs) rows.
+
+    MySQL returns SUM() as a Decimal and SQLite as an int, so the counts are converted first.
+    """
+    counts = [(module, int(n), int(hits or 0)) for module, n, hits in rows]
+    total = sum(n for _, n, _ in counts)
+    team = sum(hits for _, _, hits in counts) / total if total else 0.0
+    smoothed = {module: (hits + team * SHRINKAGE) / (n + SHRINKAGE) for module, n, hits in counts}
     return smoothed, team
 
 

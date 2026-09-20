@@ -101,3 +101,12 @@ def test_pull_requests_carry_plausible_file_facts(db, history):
     assert len(with_tests) > 0.5 * (len(prs) - len(docs_only))
     assert any(p.modules_touched > 2 for p in prs)  # some PRs span several modules
     assert all(p.modules_touched >= 1 for p in prs)
+
+
+def test_another_seed_gives_a_different_history_and_the_same_seed_repeats_it(db):
+    first = build(db, now=NOW, seed=1)
+    reset(db)
+    other = build(db, now=NOW, seed=2)
+    reset(db)
+    assert other != first  # different draws: different incidents, CI runs and so on
+    assert build(db, now=NOW, seed=1) == first

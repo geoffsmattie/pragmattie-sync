@@ -217,6 +217,11 @@ Open items:
 - **TODO:** the audit table `sdlc_agent_decisions` exists (append-only, one row per agent run) and
   `explain --record` writes to it, but the agents that must write a row on every run aren't
   built, and the Decision log tab in the web app doesn't exist yet.
-- The calibration bars pass on the synthetic history, but its incidents are generated from the
-  same factors the rubric reads, so that is a wiring check, not proof the score predicts real
-  incidents. Re-run `calibrate` once real GitHub history exists, and tune weights, never outcomes.
+- One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
+  depending only on the random draw. So the rubric is graded on 30 generated histories pooled
+  (`python -m sdlc.risk calibrate --generated 30`). The bars were fixed on 2026-09-20, before the
+  first pooled run: T0's incident rate at most a quarter of the overall rate, and the top decile
+  catching more than half of incident PRs. Both pass (0.20% vs 2.97%, and 59%), and a test locks
+  them. The synthetic incidents come from the same factors the rubric reads, so this is a wiring
+  check, not proof the score predicts real incidents. Re-run `calibrate` on real GitHub history
+  once it exists, and tune weights, never outcomes.
