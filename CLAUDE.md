@@ -101,18 +101,20 @@ npm test && npm run build
 
 Settled:
 
-- `main` is protected; all changes land through a **pull request** with green CI.
-  Required checks: **API (lint + tests)**, **API (migrations on MySQL)**, **Web (tests + build)**,
-  plus **Orchestrator (lint + tests)** once it has run on the Phase 3 PR.
-  (The job names match `.github/workflows/ci.yml`. The protection rule itself lives in GitHub
-  settings, not the repo; Geoff confirmed it on 2026-09-19.)
+- `main` is protected by a GitHub repository **ruleset** (Settings → Rules → Rulesets), not
+  classic branch protection. It blocks deletion and force-pushes, and requires a **pull request**
+  with green CI. Required checks, all defined in `.github/workflows/ci.yml`:
+  **API (lint + tests)**, **Orchestrator (lint + tests)**, **API (migrations on MySQL)**,
+  **Web (tests + build)**. (The ruleset lives in GitHub, not the repo; checked against GitHub's
+  rules API on 2026-09-19.)
 - **Required approvals on `main`: zero, for now** (Geoff is the only contributor). Revisit when
   Phase 4 enforces the governance tiers below, since T1–T3 need human approvals.
 - **One branch per phase**, cut from an up-to-date `main`: `phase-<n>-<topic>`
   (e.g. `phase-2-crm`, `phase-3-signals`). Delete the branch after merge.
 - **Non-phase work** (fixes and chores between phases): `non-phase-work-<topic>`
   (e.g. `non-phase-work-fix-lead-filter`), cut from an up-to-date `main`. Delete after merge.
-- **Merge strategy: merge commit** (as PR #1 did), not squash.
+- **Merge strategy: merge commit** (as PRs #1 and #2 did), not squash. This is a convention:
+  the ruleset still allows squash and rebase merges too, so pick "Create a merge commit".
 - **Commit format: Conventional Commits** — `type(scope): description`, e.g.
   `feat(api): add lead conversion endpoint`, `docs: add CLAUDE.md project guidance`. Adopted
   2026-09-19; earlier commits (`Phase 2: CRM screens and demo data`) keep their old style.
@@ -140,7 +142,7 @@ work always gets a person. **Status: designed, not yet built — implementation 
 
 - **Overrides:** a human can raise any PR's tier at any time; lowering a tier requires a
   written reason in the PR. Both go to the audit log.
-- **Enforcement (planned):** branch protection on `main` requires a `risk-gate` status check.
+- **Enforcement (planned):** the `main` ruleset will require a `risk-gate` status check.
   The PR risk agent sets it to pass only when the tier's approvals are present. Every agent
   decision is written to an audit table with its inputs, scores and the tier applied.
 - Tiers will live in `orchestrator/policies/tiers.yaml` so they can be changed without code.
