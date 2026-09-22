@@ -12,7 +12,14 @@ database to keep what it learns.
 | `sdlc/backlog.py` + `backlog/backlog.yaml` | 3 | Creates the product backlog as labelled GitHub Issues |
 | `sdlc/metrics.py`, `sdlc/api.py` | 3 | Delivery metrics (DORA, velocity, cycle time, CI health, risk by module) and their API |
 | `sdlc/agents/` | 4-6 | Triage, PR risk, forecaster, planner, test selector, release gate |
-| `policies/` | 4 | Governance tiers (`tiers.yaml`): how much human approval each risk level needs |
+| `policies/tiers.yaml` + `sdlc/tiers.py` | 4 | Governance tiers: score bands, floors, caps and what each tier requires; the loader validates it |
+| `sdlc/changes.py` | 4 | Classifies the files a PR changed (tests, docs-only, migrations, modules) for the risk score |
+| `sdlc/scoring.py` | 4 | Stage one of the risk score: ten weighted signals, point-in-time, capped at 100 |
+| `sdlc/governance.py` | 4 | Score to tier: bands, floors (highest wins), the docs-only cap, and the fail-safe fallback |
+| `sdlc/calibration.py` + `sdlc/risk.py` | 4 | `python -m sdlc.risk explain <pr>` and `calibrate`: read-only views of the score |
+| `sdlc/audit.py` | 4 | Append-only audit trail (`sdlc_agent_decisions`), one row per agent run |
+| `sdlc/agents/` | 4 | The PR risk agent: `llm.py` (one strict Claude call), `pr_risk.py` (score, clamp, tier), `gate.py`, `comment.py`, `github_effects.py` |
+| `sdlc/runner.py` | 4 | Polls GitHub and runs the risk agent (`ORCHESTRATOR_MODE`: off, shadow or enforce) |
 | `policies/approvers.yaml` + `sdlc/approver.py` | 4 | Simulated second approver for tier T3, manual only, recorded as `simulated` in `sdlc_approvals` |
 
 ## Everyday commands
@@ -27,8 +34,18 @@ docker compose exec orchestrator python -m sdlc.backlog --apply
 # Pull the latest issues, PRs, reviews and CI jobs from GitHub
 docker compose exec orchestrator python -m sdlc.signals.github
 
-# Regenerate the synthetic history (dates move forward to today)
+# Regenerate the synthetic history (dates move forward to today; also clears simulated approvals)
 docker compose exec orchestrator python -m sdlc.synth --reset
+
+# Score and tier a PR by hand, or grade the rubric against the history (read-only)
+docker compose exec orchestrator python -m sdlc.risk explain 485
+docker compose exec orchestrator python -m sdlc.risk calibrate
+docker compose exec orchestrator python -m sdlc.risk calibrate --generated 30   # 30 histories, pooled
+
+# The PR risk agent. Ships switched off; see ORCHESTRATOR_MODE in .env.
+docker compose exec orchestrator python -m sdlc.runner dry-run 3       # exact request and cost ceiling; calls nothing
+docker compose exec orchestrator python -m sdlc.runner try 3 --yes     # one real Claude call; writes nothing
+docker compose --profile agents up -d                                   # start polling (uses the mode in .env)
 
 # Simulated second approver for tier T3 (manual only)
 docker compose exec orchestrator python -m sdlc.approver pending           # what is waiting for you

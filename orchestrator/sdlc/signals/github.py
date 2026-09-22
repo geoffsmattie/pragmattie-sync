@@ -18,6 +18,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sdlc.changes import classify_files, infer_module
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError, parse_time
 from sdlc.tables import CIRun, Engineer, Issue, PullRequest
@@ -32,15 +33,6 @@ JOB_SUITES = {
     "Orchestrator (lint + tests)": "orchestrator",
 }
 
-# Infer a module from file paths when a PR has no module: label.
-PATH_MODULES = [
-    (re.compile(r"(^|/)(leads|lead)[^/]*\b"), "leads"),
-    (re.compile(r"(^|/)accounts?[^/]*\b|AccountDetail"), "accounts"),
-    (re.compile(r"(^|/)(opportunities|pipeline)[^/]*|PipelineView"), "pipeline"),
-    (re.compile(r"forecast", re.I), "forecasting"),
-    (re.compile(r"^orchestrator/"), "orchestrator"),
-]
-
 
 def labels_of(item: dict) -> dict[str, str]:
     """{"module": "leads", "type": "bug", ...} from labels like "module:leads"."""
@@ -53,16 +45,6 @@ def labels_of(item: dict) -> dict[str, str]:
         else:
             out[name] = "true"
     return out
-
-
-def infer_module(paths: list[str]) -> str:
-    votes: dict[str, int] = {}
-    for path in paths:
-        for pattern, module in PATH_MODULES:
-            if pattern.search(path):
-                votes[module] = votes.get(module, 0) + 1
-                break
-    return max(votes, key=votes.get) if votes else "platform"
 
 
 class Collector:
@@ -130,55 +112,59 @@ class Collector:
     def collect_pull_requests(self) -> int:
         count = 0
         for item in self.gh.paginate("/repos/{repo}/pulls", state="all"):
-            number = item["number"]
-            detail = self.gh.get(f"/repos/{{repo}}/pulls/{number}")
-            files = [
-                f["filename"] for f in self.gh.paginate(f"/repos/{{repo}}/pulls/{number}/files")
-            ]
-            reviews = list(self.gh.paginate(f"/repos/{{repo}}/pulls/{number}/reviews"))
-            created = parse_time(item["created_at"])
-            submitted = sorted(
-                parse_time(r["submitted_at"]) for r in reviews if r.get("submitted_at")
-            )
-            labels = labels_of(item)
-            linked = re.search(
-                r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)", item.get("body") or "", re.I
-            )
-            issue = None
-            if linked:
-                issue = self.db.scalar(
-                    select(Issue).where(
-                        Issue.source == SOURCE, Issue.external_id == f"issue-{linked[1]}"
-                    )
-                )
-            merged_at = parse_time(detail.get("merged_at"))
-            author = self.engineer(item.get("user"))
-            self._upsert(
-                PullRequest,
-                f"pr-{number}",
-                number=number,
-                title=item["title"][:300],
-                author_id=author.id if author else None,
-                issue_id=issue.id if issue else None,
-                module=labels.get("module") or infer_module(files),
-                files_changed=detail.get("changed_files", len(files)),
-                additions=detail.get("additions", 0),
-                deletions=detail.get("deletions", 0),
-                touches_migration=any("alembic/versions/" in f for f in files),
-                review_count=len(reviews),
-                first_review_hours=round((submitted[0] - created).total_seconds() / 3600, 1)
-                if submitted
-                else None,
-                rework_commits=max(0, detail.get("commits", 1) - 1),
-                state="merged" if merged_at else item["state"],
-                created_at=created,
-                merged_at=merged_at,
-                closed_at=parse_time(item.get("closed_at")),
-                caused_incident="caused-incident" in labels,
-                reverted=item["title"].lower().startswith("revert"),
-            )
+            self.collect_pull_request(item)
             count += 1
         return count
+
+    def collect_pull_request(self, item: dict) -> PullRequest:
+        """Store one PR, given its entry from the pulls list (or the PR object itself)."""
+        number = item["number"]
+        detail = self.gh.get(f"/repos/{{repo}}/pulls/{number}")
+        files = [f["filename"] for f in self.gh.paginate(f"/repos/{{repo}}/pulls/{number}/files")]
+        reviews = list(self.gh.paginate(f"/repos/{{repo}}/pulls/{number}/reviews"))
+        created = parse_time(item["created_at"])
+        submitted = sorted(parse_time(r["submitted_at"]) for r in reviews if r.get("submitted_at"))
+        labels = labels_of(item)
+        linked = re.search(
+            r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)", item.get("body") or "", re.I
+        )
+        issue = None
+        if linked:
+            issue = self.db.scalar(
+                select(Issue).where(
+                    Issue.source == SOURCE, Issue.external_id == f"issue-{linked[1]}"
+                )
+            )
+        merged_at = parse_time(detail.get("merged_at"))
+        author = self.engineer(item.get("user"))
+        facts = classify_files(files)
+        return self._upsert(
+            PullRequest,
+            f"pr-{number}",
+            number=number,
+            title=item["title"][:300],
+            author_id=author.id if author else None,
+            issue_id=issue.id if issue else None,
+            module=labels.get("module") or infer_module(files),
+            files_changed=detail.get("changed_files", len(files)),
+            additions=detail.get("additions", 0),
+            deletions=detail.get("deletions", 0),
+            touches_migration=facts.touches_migration,
+            test_files_changed=facts.test_files_changed,
+            docs_only=facts.docs_only,
+            modules_touched=facts.modules_touched,
+            review_count=len(reviews),
+            first_review_hours=round((submitted[0] - created).total_seconds() / 3600, 1)
+            if submitted
+            else None,
+            rework_commits=max(0, detail.get("commits", 1) - 1),
+            state="merged" if merged_at else item["state"],
+            created_at=created,
+            merged_at=merged_at,
+            closed_at=parse_time(item.get("closed_at")),
+            caused_incident="caused-incident" in labels,
+            reverted=item["title"].lower().startswith("revert"),
+        )
 
     def collect_ci_runs(self) -> int:
         count = 0

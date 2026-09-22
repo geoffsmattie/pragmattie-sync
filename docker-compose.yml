@@ -48,6 +48,23 @@ services:
       db:
         condition: service_healthy
 
+  # The PR risk agent (Phase 4). Opt-in: `docker compose --profile agents up -d`.
+  # ORCHESTRATOR_MODE in .env decides what it may do, and it ships as "off".
+  agent:
+    build: ./orchestrator
+    profiles: ["agents"]
+    command: python -m sdlc.runner run
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./orchestrator:/app
+    depends_on:
+      orchestrator:
+        condition: service_started
+    restart: unless-stopped
+
   web:
     build: ./apps/web
     environment:

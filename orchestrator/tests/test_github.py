@@ -118,6 +118,7 @@ def test_collects_issues_prs_and_ci_jobs(db, client):
     assert pr.issue_id == issue.id  # linked through "Closes #1"
     assert pr.module == "pipeline"  # inferred from file paths
     assert pr.touches_migration
+    assert (pr.test_files_changed, pr.docs_only, pr.modules_touched) == (0, False, 1)
     assert pr.first_review_hours == 6.0
     assert pr.rework_commits == 2
 

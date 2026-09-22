@@ -30,7 +30,17 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from sdlc.db import SessionLocal
-from sdlc.tables import CIRun, Deployment, Engineer, Incident, Issue, PullRequest, Sprint
+from sdlc.tables import (
+    AgentDecision,
+    Approval,
+    CIRun,
+    Deployment,
+    Engineer,
+    Incident,
+    Issue,
+    PullRequest,
+    Sprint,
+)
 
 SEED = 7
 SOURCE = "synthetic"
@@ -116,8 +126,10 @@ def _workday_after(moment: datetime, hours: float) -> datetime:
     return result
 
 
-def build(db: Session, now: datetime | None = None) -> dict[str, int]:
-    rng = random.Random(SEED)
+def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[str, int]:
+    """Generate the history. Another `seed` gives different random draws (and incidents), which
+    is how the risk rubric is calibrated across many histories instead of one lucky draw."""
+    rng = random.Random(seed)
     now = now or datetime.now().replace(microsecond=0)
     today = now.date()
 
@@ -208,7 +220,17 @@ def build(db: Session, now: datetime | None = None) -> dict[str, int]:
                     continue
                 pr_number += 1
                 pr, risk = _make_pr(
-                    rng, pr_number, n, pr_total, issue, author, personas, engineers, opened, now
+                    rng,
+                    pr_number,
+                    n,
+                    pr_total,
+                    issue,
+                    author,
+                    personas,
+                    engineers,
+                    opened,
+                    now,
+                    seed,
                 )
                 db.add(pr)
                 db.flush()
@@ -224,7 +246,7 @@ def build(db: Session, now: datetime | None = None) -> dict[str, int]:
     return counts
 
 
-def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opened, now):
+def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opened, now, seed):
     module = issue.module
     size = max(5, int(rng.lognormvariate(math.log(author.pr_size), 0.7)))
     if issue.type == "bug":
@@ -251,7 +273,23 @@ def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opene
         risk *= 3
     if merged.weekday() == 4:  # Friday
         risk *= 2
-    pr_risk = risk if state == "merged" else 0.0
+
+    # Draw order matters: these two draws stay where the constructor used to make them.
+    files_changed = max(1, size // rng.randint(25, 60))
+    deletions = int(size * rng.uniform(0.1, 0.6))
+
+    # File facts come from their own stream, so adding them never shifts the draws above.
+    frng = random.Random(f"{seed}:files:{number}")
+    docs_only = issue.type == "chore" and frng.random() < 0.6
+    test_files = 0
+    modules_touched = 1
+    if not docs_only:
+        if frng.random() < (0.85 if issue.type == "bug" else 0.7):
+            test_files = min(files_changed, max(1, round(files_changed * frng.uniform(0.2, 0.5))))
+        if files_changed >= 4 and frng.random() < 0.2:
+            modules_touched += frng.randint(1, 2)
+    # Docs and config changes don't cause incidents, so the calibration has something to hold.
+    pr_risk = risk if state == "merged" and not docs_only else 0.0
 
     return PullRequest(
         source=SOURCE,
@@ -261,10 +299,13 @@ def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opene
         author_id=engineers[author.login].id,
         issue_id=issue.id,
         module=module,
-        files_changed=max(1, size // rng.randint(25, 60)),
+        files_changed=files_changed,
         additions=size,
-        deletions=int(size * rng.uniform(0.1, 0.6)),
+        deletions=deletions,
         touches_migration=migration,
+        test_files_changed=test_files,
+        docs_only=docs_only,
+        modules_touched=modules_touched,
         review_count=1 + rework // 2 + (1 if size > 400 else 0),
         first_review_hours=round(first_review, 1),
         rework_commits=rework,
@@ -383,6 +424,14 @@ def _deploy(db: Session, rng: random.Random, merged: list[PullRequest], now: dat
 
 
 def reset(db: Session) -> None:
+    # Approvals point at pull requests; MySQL won't delete a PR that still has one.
+    synthetic_prs = select(PullRequest.id).where(PullRequest.source == SOURCE)
+    db.execute(delete(Approval).where(Approval.pull_request_id.in_(synthetic_prs)))
+    # Audit rows name PRs by number, and the reset regenerates those numbers. A correction row
+    # points at an earlier one, so unlink them first: MySQL checks that row by row.
+    synthetic_rows = AgentDecision.subject_source == SOURCE
+    db.execute(update(AgentDecision).where(synthetic_rows).values(supersedes_id=None))
+    db.execute(delete(AgentDecision).where(synthetic_rows))
     db.execute(update(Issue).where(Issue.source == SOURCE).values(sprint_id=None))
     for model in (Incident, CIRun, Deployment, PullRequest, Issue, Sprint, Engineer):
         db.execute(delete(model).where(model.source == SOURCE))

@@ -47,8 +47,19 @@ class GitHubClient:
     def get(self, path: str, **params) -> dict | list:
         return self._check(self.http.get(self._path(path), params=params)).json()
 
+    def get_text(self, path: str, accept: str, **params) -> str:
+        """A response that isn't JSON, such as a PR's diff (a diff, via `accept`)."""
+        response = self.http.get(self._path(path), params=params, headers={"Accept": accept})
+        return self._check(response).text
+
     def post(self, path: str, body: dict) -> dict:
         return self._check(self.http.post(self._path(path), json=body)).json()
+
+    def patch(self, path: str, body: dict) -> dict:
+        return self._check(self.http.patch(self._path(path), json=body)).json()
+
+    def delete(self, path: str) -> None:
+        self._check(self.http.delete(self._path(path)))
 
     def paginate(self, path: str, key: str | None = None, **params) -> Iterator[dict]:
         """Yield every item across pages (follows GitHub's Link: rel="next" header)."""

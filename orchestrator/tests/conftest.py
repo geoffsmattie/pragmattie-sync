@@ -4,6 +4,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///./test_orch.db"
 os.environ["GITHUB_TOKEN"] = ""
 os.environ["GITHUB_REPO"] = ""
+os.environ["ANTHROPIC_API_KEY"] = ""  # tests never call the real API
 
 from datetime import datetime  # noqa: E402
 

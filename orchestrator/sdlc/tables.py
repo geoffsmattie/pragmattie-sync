@@ -8,6 +8,7 @@ Every row records where it came from in `source`:
 from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -95,6 +96,10 @@ class PullRequest(Base):
     additions: Mapped[int] = mapped_column(Integer, default=0)
     deletions: Mapped[int] = mapped_column(Integer, default=0)
     touches_migration: Mapped[bool] = mapped_column(Boolean, default=False)
+    # File facts the risk score reads (see sdlc/changes.py).
+    test_files_changed: Mapped[int] = mapped_column(Integer, default=0)
+    docs_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    modules_touched: Mapped[int] = mapped_column(Integer, default=1)
     review_count: Mapped[int] = mapped_column(Integer, default=0)
     first_review_hours: Mapped[float | None] = mapped_column(Float)
     rework_commits: Mapped[int] = mapped_column(Integer, default=0)
@@ -171,3 +176,49 @@ class Approval(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     pull_request: Mapped[PullRequest] = relationship()
+
+
+class AgentDecision(Base):
+    """One row per agent run: what it saw, what it decided and what it did about it.
+
+    Append-only. Nothing is updated in place; a correction is a new row whose `supersedes_id`
+    points at the one it replaces. Written in the same transaction as the action it records.
+    """
+
+    __tablename__ = "sdlc_agent_decisions"
+    # One decision per (agent, subject, commit, attempt): a failed run may be retried, and each
+    # retry is its own row, but the same attempt can never be recorded twice.
+    __table_args__ = (
+        UniqueConstraint(
+            "agent", "subject_type", "subject_source", "subject_id", "head_sha", "attempt"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    agent: Mapped[str] = mapped_column(String(40), index=True)  # e.g. pr_risk
+    agent_version: Mapped[str] = mapped_column(String(20))
+    model_id: Mapped[str | None] = mapped_column(String(80))
+    prompt_version: Mapped[str | None] = mapped_column(String(20))
+    prompt_hash: Mapped[str | None] = mapped_column(String(64))
+    subject_type: Mapped[str] = mapped_column(String(10))  # pr | issue
+    subject_source: Mapped[str] = mapped_column(String(20))  # synthetic | github
+    subject_id: Mapped[int] = mapped_column(Integer, index=True)  # the PR or issue number
+    head_sha: Mapped[str | None] = mapped_column(String(40))  # the commit scored
+    attempt: Mapped[int] = mapped_column(Integer, default=1)  # 2, 3... after a failed run
+    trigger: Mapped[str] = mapped_column(String(20))  # poll | schedule | manual
+    inputs_digest: Mapped[dict | None] = mapped_column(JSON)
+    raw_score: Mapped[int | None] = mapped_column(Integer)
+    adjustment: Mapped[int | None] = mapped_column(Integer)  # the model's, kept separate
+    final_score: Mapped[int | None] = mapped_column(Integer)
+    tier: Mapped[str | None] = mapped_column(String(2))
+    signals: Mapped[dict | None] = mapped_column(JSON)  # points per signal: the explanation
+    output: Mapped[dict | None] = mapped_column(JSON)  # the agent's structured output, verbatim
+    action_taken: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="ok", index=True)
+    error: Mapped[str | None] = mapped_column(String(500))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    human_override: Mapped[dict | None] = mapped_column(JSON)  # tier before/after, actor, reason
+    supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_agent_decisions.id"))

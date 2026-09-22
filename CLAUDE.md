@@ -178,15 +178,62 @@ docker compose exec orchestrator python -m sdlc.approver approve <pr>           
   running, say so instead of guessing; if nothing is waiting, say that.
 - **Claude never runs `approve`** unless Geoff names the PR in that same message, and runs
   `request` only when asked. Listing with `pending` is always fine.
-- Until Phase 4 nothing computes a PR's tier, so `pending` stays empty until someone runs
-  `request`. The PR risk agent should call `request_approval` when it assigns T3, and the
-  `risk-gate` check should stay pending until the approval is recorded.
+- The PR risk agent (`sdlc/runner.py`) calls `request_approval` when it assigns T3, so `pending`
+  fills in by itself once the agent runs. In enforce mode the `risk-gate` check stays pending until
+  the sign-off boxes are ticked and this approval is recorded.
+
+### Phase 4 decisions (2026-09-20)
+
+The Phase 4 build spec lives in the blueprint doc, which is kept out of this public repo.
+Decisions made while building it:
+
+- **Polling, not webhooks.** The orchestrator polls GitHub (about every 30 seconds), because a
+  local-only laptop can't receive webhooks.
+- **Human sign-off is a tick-box in the risk agent's PR comment.** GitHub won't let a PR's author
+  approve it, so don't turn on "require review from code owners" in the ruleset: with one human
+  it would lock Geoff out. A `CODEOWNERS` file may still be added for documentation.
+- **`risk-gate` is a commit status**, so the GitHub token needs "Commit statuses: read and
+  write". Run in shadow mode first (`ORCHESTRATOR_MODE=off|shadow|enforce` in `.env`). Don't make
+  `risk-gate` a required check until shadow has run a full sprint, and give the repo admin a
+  ruleset bypass so a stopped local stack can't block every merge.
+- **Models:** Haiku 4.5 for triage, Sonnet 5 for the ±15 risk adjustment, ids kept in `.env`.
+  Every run records its tokens in the audit table. Geoff wants API usage and cost checked
+  periodically: report it at each Phase 4 milestone. Sonnet 5 rejects `temperature`, `top_p` and
+  `top_k` with a 400, so never send them; repeatability comes from a fixed prompt, a JSON schema,
+  medium effort and the clamp enforced in code. The blueprint's "low temperature" can't apply.
+- **"Docs or config only" (capped at T0) never includes** `orchestrator/policies/`,
+  `.github/workflows/` or dependency manifests, so a PR that edits governance, CI or
+  dependencies can't be capped at T0.
+- PRs carry `test_files_changed`, `docs_only` and `modules_touched` (from `sdlc/changes.py`).
+  An existing database needs `sdlc.synth --reset`, or a collector run, to fill them in.
 
 Open items:
 
-- **TODO:** `orchestrator/policies/tiers.yaml` doesn't exist yet (Phase 4).
-- **TODO:** the risk score (0–100) comes from the Phase 4 PR risk model, which isn't built;
-  until then no PR has a real tier.
+- **TODO:** the PR risk agent is built and tested with Claude and GitHub mocked, but it has never
+  run for real. Next: a first live call (`python -m sdlc.runner try <pr> --yes`), then shadow mode
+  for a full sprint, then read the results before enforcing.
+  - Pieces: `sdlc/agents/llm.py` (one strict Claude call), `pr_risk.py` (score, the ±15 clamp, the
+    tier from code), `gate.py` (the `risk-gate` state), `comment.py` (the PR comment and its
+    sign-off boxes), `github_effects.py` (the only writes: one comment, one `tier:` label, the
+    status), and `sdlc/runner.py` (the poll loop).
+  - Start it with `docker compose --profile agents up -d`. `ORCHESTRATOR_MODE` ships as `off`,
+    which does nothing at all; `dry-run <pr>` shows the exact request and a cost ceiling and calls
+    nothing; `try <pr>` needs `--yes` to spend money and writes nothing.
+  - A new commit is assessed once and its sign-off boxes start empty. A failed run fails closed to
+    the floor tier or T2 and is retried up to three times, five minutes apart.
+  - The agent never merges, approves, closes or pushes, and the model can't name a tier.
+  - Not done: the token needs "Commit statuses" and "Pull requests" write access before shadow
+    mode can post; CI failures reach the score only when the collector runs.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
-- **TODO:** where the audit log lives and how overrides are recorded (table/labels not designed).
+- **TODO:** the audit table `sdlc_agent_decisions` (append-only, one row per agent run, with an
+  `attempt` number so a failed run can be retried) is written by the risk agent on every run. The
+  triage agent and the Decision log tab in the web app don't exist yet.
+- One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
+  depending only on the random draw. So the rubric is graded on 30 generated histories pooled
+  (`python -m sdlc.risk calibrate --generated 30`). The bars were fixed on 2026-09-20, before the
+  first pooled run: T0's incident rate at most a quarter of the overall rate, and the top decile
+  catching more than half of incident PRs. Both pass (0.20% vs 2.97%, and 59%), and a test locks
+  them. The synthetic incidents come from the same factors the rubric reads, so this is a wiring
+  check, not proof the score predicts real incidents. Re-run `calibrate` on real GitHub history
+  once it exists, and tune weights, never outcomes.

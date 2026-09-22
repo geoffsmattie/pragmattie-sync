@@ -1,6 +1,7 @@
 """Orchestrator settings, read from environment variables (or a .env file)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,18 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repo: str = ""  # "owner/name", e.g. "geoffsmattie/pragmattie-sync"
     github_api_url: str = "https://api.github.com"
+
+    # The PR risk agent (Phase 4). Model ids live here, never in code, so any run can be
+    # reproduced from its audit row and a model change is a config change.
+    anthropic_api_key: str = ""
+    risk_model: str = "claude-sonnet-5"
+    # off: the agents do nothing and write nothing to GitHub. shadow: they comment, label and
+    # record decisions, but the risk-gate status always passes. enforce: the status gates merges.
+    orchestrator_mode: Literal["off", "shadow", "enforce"] = "off"
+    poll_seconds: int = 30
+    agent_timeout_seconds: float = 60.0
+    risk_max_output_tokens: int = 4000
+    diff_char_limit: int = 60000  # about 15k tokens of diff, risky files first
 
 
 @lru_cache
