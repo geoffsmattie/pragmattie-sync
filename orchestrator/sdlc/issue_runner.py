@@ -270,9 +270,9 @@ def main(argv: list[str] | None = None) -> None:
 
 def _look(runner: IssueRunner, args, settings) -> None:
     title, user = prepare(runner, args.number)
-    sent = runner.llm.request_kwargs(SYSTEM_PROMPT, user, SCHEMA, "low")
+    sent = runner.llm.request_kwargs(SYSTEM_PROMPT, user, SCHEMA, None)
     print(f"Issue #{args.number}: {title}")
-    print(f"Model {sent['model']}, effort low.")
+    print(f"Model {sent['model']} (no effort parameter: Haiku 4.5 doesn't support it).")
     print("Request:", estimate(SYSTEM_PROMPT, user, sent["max_tokens"]))
     if args.command == "dry-run":
         print("Dry run: nothing was sent to Claude and nothing was written to GitHub.")

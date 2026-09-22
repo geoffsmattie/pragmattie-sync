@@ -8,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from sdlc import metrics
+from sdlc import audit, metrics
+from sdlc import board as board_module
 from sdlc.config import get_settings
 from sdlc.db import get_db
 
@@ -78,3 +79,46 @@ def modules(db: DB) -> list[dict]:
 @app.get("/api/v1/signals/sources")
 def sources(db: DB) -> dict:
     return metrics.sources(db)
+
+
+@app.get("/api/v1/signals/board")
+def board(
+    db: DB,
+    sprint: str | None = None,  # "current" (default client-side), "all", or a sprint name
+    module: str | None = None,
+    owner: str | None = None,
+    source: Literal["synthetic", "github"] | None = None,
+) -> dict:
+    return board_module.serialize(
+        board_module.build_board(
+            db, now=_now(), sprint=sprint, module=module, owner=owner, source=source
+        )
+    )
+
+
+@app.get("/api/v1/signals/decisions")
+def decisions(
+    db: DB,
+    agent: str | None = None,
+    subject_type: Literal["pr", "issue"] | None = None,
+    subject_source: Literal["synthetic", "github"] | None = None,
+    status: Literal["ok", "error"] | None = None,
+    tier: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """The audit trail, newest first: every agent run, what it decided, what it did about it."""
+    filters = dict(
+        agent=agent,
+        subject_type=subject_type,
+        subject_source=subject_source,
+        status=status,
+        tier=tier,
+    )
+    rows = audit.list_decisions(db, limit=limit, offset=offset, **filters)
+    return {
+        "total": audit.count_decisions(db, **filters),
+        "limit": limit,
+        "offset": offset,
+        "decisions": [audit.serialize_decision(d) for d in rows],
+    }

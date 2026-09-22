@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from sdlc import gate_status
 from sdlc.agents.comment import Meta, comment_head, read_ticks, refresh, render
 from sdlc.agents.gate import Approvals, evaluate
 from sdlc.agents.github_effects import Effects
@@ -109,7 +110,7 @@ class Runner:
             if good is None and self._may_try(decisions, now):
                 self._assess_and_publish(db, pr, sha, len(decisions) + 1, comment, now, summary)
             elif decisions:
-                self._refresh_gate(db, pr, sha, good or decisions[-1], comment)
+                self._refresh_gate(db, pr, sha, good or decisions[-1], comment, now)
             db.commit()
 
     def _may_try(self, decisions: list, now: datetime) -> bool:
@@ -177,6 +178,7 @@ class Runner:
             "mode": self.mode,
         }
         self._last_status[(pr.number, sha)] = (gate.state, gate.description)
+        gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
     def _request_simulated_approval(self, db, pr: PullRequest, tier: str) -> str:
         """T3 needs a second human; Geoff is the only one, so the simulated approver fills in."""
@@ -190,7 +192,7 @@ class Runner:
 
     # --- keep the check in step with what people do ------------------------------------------
 
-    def _refresh_gate(self, db, pr, sha, decision, comment) -> None:
+    def _refresh_gate(self, db, pr, sha, decision, comment, now) -> None:
         ok = decision.status == "ok"
         signoff, qa = read_ticks(comment["body"], sha) if comment else (False, False)
         simulated = bool(
@@ -202,6 +204,7 @@ class Runner:
         )
         approvals = Approvals(signoff=signoff, qa_done=qa, simulated_approved=simulated)
         gate = evaluate(self.policy, decision.tier, ok=ok, approvals=approvals, mode=self.mode)
+        gate_status.upsert(db, pr, gate, tier=decision.tier, mode=self.mode, now=now)
 
         key = (pr.number, sha)
         if self._last_status.get(key) != (gate.state, gate.description):

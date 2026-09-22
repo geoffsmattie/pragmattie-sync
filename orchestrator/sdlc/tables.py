@@ -222,3 +222,31 @@ class AgentDecision(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer)
     human_override: Mapped[dict | None] = mapped_column(JSON)  # tier before/after, actor, reason
     supersedes_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_agent_decisions.id"))
+
+
+class GateStatus(Base):
+    """The risk-gate's current state for one PR: a read model, not an audit trail.
+
+    The gate's "what it's waiting for" reasoning (sdlc/agents/gate.py's Gate) is computed fresh
+    on every poll from live GitHub state (the sign-off tick-boxes, the simulated approval) and
+    was previously thrown away once written to GitHub's status API. This table is the one place
+    that reasoning is persisted, upserted by sdlc/runner.py every time it recomputes a PR's gate,
+    so the delivery board (or anything else) can read "what's this PR waiting for" without an
+    extra live GitHub call. One row per PR; a new poll replaces it, it is never appended to.
+    """
+
+    __tablename__ = "sdlc_gate_status"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pull_request_id: Mapped[int] = mapped_column(
+        ForeignKey("sdlc_pull_requests.id"), unique=True, index=True
+    )
+    tier: Mapped[str | None] = mapped_column(String(2))
+    state: Mapped[str] = mapped_column(String(10))  # success | pending | failure
+    would_be: Mapped[str] = mapped_column(String(10))  # what enforce mode would post
+    missing: Mapped[list] = mapped_column(JSON, default=list)  # e.g. ["human sign-off"]
+    description: Mapped[str] = mapped_column(String(140))
+    mode: Mapped[str] = mapped_column(String(10))  # shadow | enforce, when this was computed
+    updated_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+    pull_request: Mapped[PullRequest] = relationship()

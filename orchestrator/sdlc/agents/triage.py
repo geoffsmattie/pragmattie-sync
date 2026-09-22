@@ -74,7 +74,10 @@ class TriageOutput(BaseModel):
     priority: Literal[PRIORITIES]
     estimate_points: Literal[POINTS]
     duplicate_of: int = Field(description="A candidate issue number, or 0 for no duplicate")
-    confidence: float = Field(ge=0, le=1)
+    # No ge=/le= here: Claude's structured-output schema rejects minimum/maximum on a "number"
+    # field ("properties maximum, minimum are not supported"). Clamped in code below instead,
+    # the same place every other numeric bound in this codebase is enforced.
+    confidence: float = Field(description="0 to 1, how sure the model is")
     rationale: str
     questions: list[str]
 
@@ -141,7 +144,7 @@ def assess(
             system=SYSTEM_PROMPT,
             user=build_prompt(title, body, labels, candidates),
             schema=SCHEMA,
-            effort="low",  # classification against a fixed vocabulary: cheap and predictable
+            effort=None,  # Haiku 4.5 rejects the effort parameter outright (a 400, not a no-op)
         )
         output = TriageOutput.model_validate(result.data)
     except LLMError as err:
@@ -152,7 +155,8 @@ def assess(
     valid_numbers = {c.number for c in candidates}
     duplicate_of = output.duplicate_of if output.duplicate_of in valid_numbers else None
     questions = tuple(q.strip()[:200] for q in output.questions[:2] if q.strip())
-    needs_info = output.confidence < NEEDS_INFO_CONFIDENCE or bool(questions)
+    confidence = round(min(1.0, max(0.0, output.confidence)), 2)  # clamped: not enforced by schema
+    needs_info = confidence < NEEDS_INFO_CONFIDENCE or bool(questions)
 
     return Assessment(
         module=output.module,
@@ -160,7 +164,7 @@ def assess(
         priority=output.priority,
         estimate_points=output.estimate_points,
         duplicate_of=duplicate_of,
-        confidence=round(output.confidence, 2),
+        confidence=confidence,
         needs_info=needs_info,
         status="ok",
         error=None,

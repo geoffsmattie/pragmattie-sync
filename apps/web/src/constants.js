@@ -62,3 +62,18 @@ export const MODULE_LABELS = {
   platform: 'Platform',
   orchestrator: 'Orchestrator',
 }
+
+// Column order and titles for the delivery board — mirrors orchestrator/sdlc/board.py's
+// COLUMNS/COLUMN_TITLES exactly. Keep the two in sync by hand; there's no shared schema.
+export const BOARD_COLUMNS = [
+  { key: 'backlog', title: 'Backlog' },
+  { key: 'triaged', title: 'Triaged' },
+  { key: 'in_progress', title: 'In progress' },
+  { key: 'in_review', title: 'In review' },
+  { key: 'gated', title: 'Gated' },
+  { key: 'merged', title: 'Merged' },
+  { key: 'production', title: 'Production' },
+]
+
+// Risk tier -> Vuetify semantic color, low tier (safest) to high.
+export const TIER_COLORS = { T0: 'success', T1: 'info', T2: 'warning', T3: 'error' }

@@ -11,7 +11,7 @@ subject was this decision made about" purpose.
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sdlc.tables import AgentDecision
@@ -86,3 +86,104 @@ def latest_decision(
         .order_by(AgentDecision.created_at.desc())
         .limit(1)
     )
+
+
+def _filtered(
+    db: Session,
+    *,
+    agent: str | None,
+    subject_type: str | None,
+    subject_source: str | None,
+    status: str | None,
+    tier: str | None,
+):
+    query = select(AgentDecision)
+    if agent:
+        query = query.where(AgentDecision.agent == agent)
+    if subject_type:
+        query = query.where(AgentDecision.subject_type == subject_type)
+    if subject_source:
+        query = query.where(AgentDecision.subject_source == subject_source)
+    if status:
+        query = query.where(AgentDecision.status == status)
+    if tier:
+        query = query.where(AgentDecision.tier == tier)
+    return query
+
+
+def list_decisions(
+    db: Session,
+    *,
+    agent: str | None = None,
+    subject_type: str | None = None,
+    subject_source: str | None = None,
+    status: str | None = None,
+    tier: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[AgentDecision]:
+    """The decision log for the web app: every agent run, newest first, any filter combination."""
+    query = _filtered(
+        db,
+        agent=agent,
+        subject_type=subject_type,
+        subject_source=subject_source,
+        status=status,
+        tier=tier,
+    )
+    query = query.order_by(AgentDecision.created_at.desc()).limit(limit).offset(offset)
+    return list(db.scalars(query))
+
+
+def serialize_decision(d: AgentDecision) -> dict:
+    """AgentDecision -> plain JSON-safe dict, the same shape board.py's `serialize` follows."""
+    return {
+        "id": d.id,
+        "created_at": d.created_at.isoformat(),
+        "agent": d.agent,
+        "agent_version": d.agent_version,
+        "model_id": d.model_id,
+        "prompt_version": d.prompt_version,
+        "prompt_hash": d.prompt_hash,
+        "subject_type": d.subject_type,
+        "subject_source": d.subject_source,
+        "subject_id": d.subject_id,
+        "head_sha": d.head_sha,
+        "attempt": d.attempt,
+        "trigger": d.trigger,
+        "raw_score": d.raw_score,
+        "adjustment": d.adjustment,
+        "final_score": d.final_score,
+        "tier": d.tier,
+        "signals": d.signals,
+        "output": d.output,
+        "action_taken": d.action_taken,
+        "status": d.status,
+        "error": d.error,
+        "latency_ms": d.latency_ms,
+        "input_tokens": d.input_tokens,
+        "output_tokens": d.output_tokens,
+        "human_override": d.human_override,
+        "supersedes_id": d.supersedes_id,
+    }
+
+
+def count_decisions(
+    db: Session,
+    *,
+    agent: str | None = None,
+    subject_type: str | None = None,
+    subject_source: str | None = None,
+    status: str | None = None,
+    tier: str | None = None,
+) -> int:
+    """Total rows matching the same filters as `list_decisions`, for pagination."""
+    query = _filtered(
+        db,
+        agent=agent,
+        subject_type=subject_type,
+        subject_source=subject_source,
+        status=status,
+        tier=tier,
+    )
+    return db.scalar(select(func.count()).select_from(query.subquery())) or 0

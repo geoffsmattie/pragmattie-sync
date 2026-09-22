@@ -68,8 +68,8 @@ def test_a_clean_classification_comes_back_whole(db):
     )
     assert result.confidence == 0.8 and result.duplicate_of is None
     assert not result.needs_info
-    # classification against a fixed vocabulary: cheap and low effort, as the code promises
-    assert fake.calls[0]["output_config"]["effort"] == "low"
+    # Haiku 4.5 rejects the effort parameter outright (a 400), so it's never sent at all.
+    assert "effort" not in fake.calls[0]["output_config"]
 
 
 def test_the_model_can_only_choose_real_values():
@@ -82,6 +82,16 @@ def test_the_model_can_only_choose_real_values():
     assert props["estimate_points"]["enum"] == [1, 2, 3, 5, 8]
     assert triage.SCHEMA["additionalProperties"] is False
     assert "cannot close an issue, assign it, edit" in triage.SYSTEM_PROMPT
+    # Regression guard: Claude's structured-output schema rejects minimum/maximum on a "number"
+    # field with a 400 ("properties maximum, minimum are not supported") — found live on the
+    # triage smoke test, 2026-09-23. confidence must never carry either keyword.
+    assert "minimum" not in props["confidence"] and "maximum" not in props["confidence"]
+
+
+@pytest.mark.parametrize(("raw", "clamped"), [(1.4, 1.0), (-0.3, 0.0), (0.55, 0.55)])
+def test_confidence_is_clamped_in_code_not_trusted_to_the_schema(db, raw, clamped):
+    result, _ = run(db, response(triage_answer(confidence=raw)))
+    assert result.confidence == clamped
 
 
 @pytest.mark.parametrize(

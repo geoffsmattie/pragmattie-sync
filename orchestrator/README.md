@@ -25,6 +25,8 @@ database to keep what it learns.
 | `sdlc/runner.py` | 4 | Polls GitHub and drives both agents (`ORCHESTRATOR_MODE`: off, shadow or enforce) |
 | `sdlc/issue_runner.py` | 4 | The triage agent's own poll loop, version-triggered on an issue's title+body, driven by `sdlc/runner.py` |
 | `policies/approvers.yaml` + `sdlc/approver.py` | 4 | Simulated second approver for tier T3, manual only, recorded as `simulated` in `sdlc_approvals` |
+| `sdlc/gate_status.py` | 4 | Read-model cache of the risk-gate's current state per PR (`sdlc_gate_status`), replaced in place every poll — not an audit trail |
+| `sdlc/board.py` + `/api/v1/signals/board` | 4 | Derives the delivery board's Kanban columns from the signal tables on every request — no stored status field |
 
 ## Everyday commands
 
@@ -76,6 +78,25 @@ merge). The comment says what enforce mode would have done instead.
 docker compose logs -f agent          # what the poller is doing right now
 docker compose exec orchestrator python -m sdlc.approver pending   # any T3 needing the simulated approval
 ```
+
+## The delivery board
+
+The **Delivery board** page (`apps/web/src/views/BoardView.vue`, http://localhost:5173/board)
+is the demo surface for watching the agents work: a Kanban board with seven columns — Backlog,
+Triaged, In progress, In review, Gated, Merged, Production — where a card's column is always
+computed fresh from `sdlc/board.py`, never stored. It polls the board endpoint every 15 seconds
+and flashes any card that moved since the last poll.
+
+It filters by sprint (default: the current one), module, owner and simulated-vs-real, and has a
+client-side **Replay** control that re-plays the last 7/14/30/60 days of history using each
+card's own transition timeline — no extra network calls, since the data's already loaded.
+Clicking a card opens a drawer with its full timeline and the agent decision(s) behind it
+(tier, score, signal breakdown, any human override).
+
+Real GitHub issues never carry a sprint, so they're never excluded by the sprint filter; and
+since there's no hosted deploy for this project, real PRs stop at Merged — Production is
+populated by simulated history only. Both are deliberate scope calls, not gaps to fix later; see
+the Phase 4 notes in the root `CLAUDE.md`.
 
 ## Synthetic vs real data
 
