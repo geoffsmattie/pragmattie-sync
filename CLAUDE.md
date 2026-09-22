@@ -246,12 +246,13 @@ Open items:
   - **Human overrides:** if a human has changed a dimension label since the agent's last
     successful run on that issue, later runs leave that dimension alone and record the difference
     on the new decision's `human_override` field, rather than fighting the correction.
-  - **Open question for Geoff:** the acceptance bars (module 85%, type 90%, points within one
-    step 70%) need an evaluation set "labelled by Geoff first" — real human judgement, not
-    Claude's. `orchestrator/backlog/backlog.yaml` already has 40 issues with module/type/points
-    set, which is the right size, but **it needs to be Geoff's own judgement on each one, not
-    something a past session wrote, or grading against it would just check the agent against
-    another AI's guesses.** Ask him before building the eval harness against it.
+  - **TODO — evaluation set.** The acceptance bars (module 85%, type 90%, points within one step
+    70%) need an evaluation set "labelled by Geoff first" — real human judgement, not Claude's.
+    `orchestrator/backlog/backlog.yaml` has 40 issues with module/type/points set, but Geoff
+    confirmed on 2026-09-23 that **Cowork wrote those, not him** — so it cannot be the eval set;
+    grading against it would just check the agent against another AI's guesses. He needs to
+    hand-label a real set (his own module/type/points call on 40 real or realistic issues) before
+    the eval harness can be built and the acceptance bars checked.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - **TODO:** the audit table `sdlc_agent_decisions` (append-only, one row per agent run, with an
