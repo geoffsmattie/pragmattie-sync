@@ -1,15 +1,21 @@
-"""Poll GitHub and run the PR risk agent. (The demo is local-only, so it polls; no webhooks.)
+"""Poll GitHub and run both agents. (The demo is local-only, so it polls; no webhooks.)
+
+`run` and `once` drive the PR risk agent (this module) and the triage agent
+(sdlc/issue_runner.py) together, one poll cycle each, in one process — one container for the
+whole orchestrator, per the blueprint's shared ORCHESTRATOR_MODE kill switch. The two agents
+are otherwise independent: see sdlc/issue_runner.py for triage's own trigger and autonomy rules.
 
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.runner run            # poll forever, every POLL_SECONDS
-    python -m sdlc.runner once           # one poll, then exit
-    python -m sdlc.runner dry-run 7      # show the exact request for PR #7; calls nothing
+    python -m sdlc.runner run            # poll both agents forever, every POLL_SECONDS
+    python -m sdlc.runner once           # one poll of both agents, then exit
+    python -m sdlc.runner dry-run 7      # show the exact PR risk request for PR #7; calls nothing
     python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes nothing
+For the triage agent's own dry-run/try commands, use `python -m sdlc.issue_runner`.
 
-ORCHESTRATOR_MODE decides what a poll may do:
+ORCHESTRATOR_MODE decides what a poll may do, for both agents:
     off      nothing at all: no reads, no writes, no API calls
-    shadow   comment, label and record decisions, but the risk-gate status always passes
-    enforce  the status is real: pending until the tier's people have signed off
+    shadow   comment, label and record decisions, but the PR risk-gate status always passes
+    enforce  the risk-gate status is real: pending until the tier's people have signed off
 One decision per PR commit: a new push is assessed once, and the sign-off boxes start empty.
 A failed run is retried up to three times, five minutes apart, and fails closed until it works.
 """
@@ -22,6 +28,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from sdlc import gate_status
 from sdlc.agents.comment import Meta, comment_head, read_ticks, refresh, render
 from sdlc.agents.gate import Approvals, evaluate
 from sdlc.agents.github_effects import Effects
@@ -43,6 +50,7 @@ from sdlc.calibration import facts_of
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError
+from sdlc.issue_runner import IssueRunner
 from sdlc.scoring import compute_features, features_digest, score_features
 from sdlc.signals.github import Collector
 from sdlc.tables import Approval, PullRequest
@@ -88,14 +96,21 @@ class Runner:
         number, sha = item["number"], item["head"]["sha"]
         with SessionLocal() as db:
             pr = Collector(db, self.gh).collect_pull_request(item)
-            decisions = decisions_for(db, AGENT, pr, sha)
+            decisions = decisions_for(
+                db,
+                AGENT,
+                subject_type="pr",
+                subject_source=pr.source,
+                subject_id=pr.number,
+                head_sha=sha,
+            )
             good = next((d for d in decisions if d.status == "ok"), None)
             comment = self.effects.find_comment(number)
 
             if good is None and self._may_try(decisions, now):
                 self._assess_and_publish(db, pr, sha, len(decisions) + 1, comment, now, summary)
             elif decisions:
-                self._refresh_gate(db, pr, sha, good or decisions[-1], comment)
+                self._refresh_gate(db, pr, sha, good or decisions[-1], comment, now)
             db.commit()
 
     def _may_try(self, decisions: list, now: datetime) -> bool:
@@ -131,7 +146,9 @@ class Runner:
             db,
             agent=AGENT,
             agent_version=AGENT_VERSION,
-            pr=pr,
+            subject_type="pr",
+            subject_source=pr.source,
+            subject_id=pr.number,
             trigger="poll",
             now=now,
             head_sha=sha,
@@ -161,6 +178,7 @@ class Runner:
             "mode": self.mode,
         }
         self._last_status[(pr.number, sha)] = (gate.state, gate.description)
+        gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
     def _request_simulated_approval(self, db, pr: PullRequest, tier: str) -> str:
         """T3 needs a second human; Geoff is the only one, so the simulated approver fills in."""
@@ -174,7 +192,7 @@ class Runner:
 
     # --- keep the check in step with what people do ------------------------------------------
 
-    def _refresh_gate(self, db, pr, sha, decision, comment) -> None:
+    def _refresh_gate(self, db, pr, sha, decision, comment, now) -> None:
         ok = decision.status == "ok"
         signoff, qa = read_ticks(comment["body"], sha) if comment else (False, False)
         simulated = bool(
@@ -186,6 +204,7 @@ class Runner:
         )
         approvals = Approvals(signoff=signoff, qa_done=qa, simulated_approved=simulated)
         gate = evaluate(self.policy, decision.tier, ok=ok, approvals=approvals, mode=self.mode)
+        gate_status.upsert(db, pr, gate, tier=decision.tier, mode=self.mode, now=now)
 
         key = (pr.number, sha)
         if self._last_status.get(key) != (gate.state, gate.description):
@@ -260,25 +279,30 @@ def main(argv: list[str] | None = None) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     runner_mode = settings.orchestrator_mode
     try:
-        runner = Runner(GitHubClient(), StructuredLLM(), load_policy(), runner_mode)
+        gh = GitHubClient()
+        runner = Runner(gh, StructuredLLM(), load_policy(), runner_mode)
+        triage_runner = IssueRunner(gh, StructuredLLM(model=settings.triage_model), runner_mode)
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
     if args.command in ("dry-run", "try"):
         _look(runner, args)
     elif args.command == "once":
-        print(runner.poll_once())
+        print({"pr_risk": runner.poll_once(), "triage": triage_runner.poll_once()})
     else:
         log.info(
-            "risk agent started in %s mode, polling every %ss", runner_mode, settings.poll_seconds
+            "risk and triage agents started in %s mode, polling every %ss",
+            runner_mode,
+            settings.poll_seconds,
         )
         while True:
-            try:
-                summary = runner.poll_once()
-                if summary.get("assessed") or summary.get("errors"):
-                    log.info("poll: %s", summary)
-            except Exception:  # noqa: BLE001 - one bad poll must not stop the loop
-                log.exception("poll failed")
+            for name, agent in (("pr_risk", runner), ("triage", triage_runner)):
+                try:
+                    summary = agent.poll_once()
+                    if summary.get("assessed") or summary.get("errors"):
+                        log.info("%s poll: %s", name, summary)
+                except Exception:  # noqa: BLE001 - one bad poll must not stop the loop or the other agent
+                    log.exception("%s poll failed", name)
             time.sleep(settings.poll_seconds)
 
 

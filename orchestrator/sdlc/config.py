@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # reproduced from its audit row and a model change is a config change.
     anthropic_api_key: str = ""
     risk_model: str = "claude-sonnet-5"
+    triage_model: str = "claude-haiku-4-5"
+    triage_max_output_tokens: int = 1500
     # off: the agents do nothing and write nothing to GitHub. shadow: they comment, label and
     # record decisions, but the risk-gate status always passes. enforce: the status gates merges.
     orchestrator_mode: Literal["off", "shadow", "enforce"] = "off"

@@ -18,6 +18,16 @@ export const routes = [
     name: 'engineering',
     component: () => import('../views/EngineeringView.vue'),
   },
+  {
+    path: '/board',
+    name: 'board',
+    component: () => import('../views/BoardView.vue'),
+  },
+  {
+    path: '/decisions',
+    name: 'decisions',
+    component: () => import('../views/DecisionLogView.vue'),
+  },
 ]
 
 export default createRouter({ history: createWebHistory(), routes })

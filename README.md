@@ -40,7 +40,7 @@ docker compose exec api python -m app.seed --reset
 
 ## Engineering history
 
-The orchestrator also loads about six months of **synthetic** engineering history on first start: 13 sprints, ~330 issues, ~500 pull requests, ~3,600 CI runs, deployments and incidents. The **Engineering signals** page shows it as DORA measures, velocity, cycle time, CI health and risk by module, and always says how much is simulated versus collected from GitHub. See [orchestrator/README.md](orchestrator/README.md).
+The orchestrator also loads about six months of **synthetic** engineering history on first start: 13 sprints, ~330 issues, ~500 pull requests, ~3,600 CI runs, deployments and incidents. The **Engineering signals** page shows it as DORA measures, velocity, cycle time, CI health and risk by module, and always says how much is simulated versus collected from GitHub. The **Delivery board** page shows the same history (plus any real GitHub activity) as a live Kanban board — issues and PRs moving through triage, review, the risk gate, merge and deploy — with a Replay control to watch the last N days play out. See [orchestrator/README.md](orchestrator/README.md).
 
 ## Connecting GitHub
 
@@ -61,6 +61,7 @@ The backlog script and signals collector need a GitHub token in `.env`:
 | Pipeline | Open deals by stage for this quarter, next quarter or all; move a deal between stages |
 | Forecast | Quota, closed won, commit, best case and weighted forecast, by month, stage and rep |
 | Engineering signals | DORA measures, sprint velocity, PR cycle time, CI health, risk and effort by module |
+| Delivery board | Live Kanban view of issues and PRs moving through the pipeline, derived from the same tables — no stored status, filterable, with a history Replay |
 
 API reference: http://localhost:8000/docs
 

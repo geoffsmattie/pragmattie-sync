@@ -31,6 +31,15 @@ def test_the_request_has_the_shape_the_sonnet_5_api_accepts():
     assert sent["messages"] == [{"role": "user", "content": "the PR"}]
 
 
+def test_effort_none_omits_the_field_entirely_for_models_that_reject_it():
+    # Haiku 4.5 returns a 400 ("This model does not support the effort parameter") if the field
+    # is present at all, even as a no-op value — found live on the triage agent, 2026-09-23.
+    fake = FakeAnthropic(response())
+    call(fake, effort=None)
+    assert "effort" not in fake.calls[0]["output_config"]
+    assert fake.calls[0]["output_config"]["format"] == {"type": "json_schema", "schema": SCHEMA}
+
+
 def test_a_good_answer_comes_back_with_its_usage():
     result = call(FakeAnthropic(response(answer(adjustment=4), tokens=(1200, 150, 900, 100))))
     assert result.data["adjustment"] == 4

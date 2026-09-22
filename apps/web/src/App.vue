@@ -8,7 +8,9 @@ const nav = [
   { title: 'Pipeline', icon: 'mdi-view-column-outline', to: '/pipeline' },
   { title: 'Forecast', icon: 'mdi-chart-line', to: '/forecast' },
   { header: 'Delivery intelligence' },
+  { title: 'Delivery board', icon: 'mdi-kanban', to: '/board' },
   { title: 'Engineering signals', icon: 'mdi-pulse', to: '/engineering' },
+  { title: 'Decision log', icon: 'mdi-format-list-checks', to: '/decisions' },
 ]
 </script>
 

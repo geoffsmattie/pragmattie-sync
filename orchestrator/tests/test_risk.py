@@ -34,13 +34,23 @@ def make_pr(db, number=301, module="billing_auth", **kwargs):
 def test_record_decision_appends_and_never_updates(db):
     pr = make_pr(db)
     first = record_decision(
-        db, agent="pr_risk", agent_version="v1", pr=pr, trigger="manual", now=NOW, final_score=40
+        db,
+        agent="pr_risk",
+        agent_version="v1",
+        subject_type="pr",
+        subject_source=pr.source,
+        subject_id=pr.number,
+        trigger="manual",
+        now=NOW,
+        final_score=40,
     )
     correction = record_decision(
         db,
         agent="pr_risk",
         agent_version="v1",
-        pr=pr,
+        subject_type="pr",
+        subject_source=pr.source,
+        subject_id=pr.number,
         trigger="manual",
         now=NOW,
         final_score=55,

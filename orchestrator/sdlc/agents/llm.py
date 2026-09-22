@@ -61,21 +61,28 @@ class StructuredLLM:
             )
         return self._client
 
-    def request_kwargs(self, system: str, user: str, schema: dict, effort: str) -> dict:
-        """The exact request, so a dry run can show it without sending it."""
+    def request_kwargs(self, system: str, user: str, schema: dict, effort: str | None) -> dict:
+        """The exact request, so a dry run can show it without sending it.
+
+        `effort` is omitted from the request entirely when None: some models (Haiku 4.5, found
+        live on the triage agent, 2026-09-23) reject the field outright with a 400 ("This model
+        does not support the effort parameter"), rather than silently ignoring it.
+        """
+        output_config: dict = {"format": {"type": "json_schema", "schema": schema}}
+        if effort is not None:
+            output_config["effort"] = effort
         return {
             "model": self.model,
             "max_tokens": self.max_tokens,
             # The stable instructions go first and are cached; the PR-specific text comes last.
             "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": user}],
-            "output_config": {
-                "effort": effort,
-                "format": {"type": "json_schema", "schema": schema},
-            },
+            "output_config": output_config,
         }
 
-    def call(self, *, system: str, user: str, schema: dict, effort: str = "medium") -> LLMResult:
+    def call(
+        self, *, system: str, user: str, schema: dict, effort: str | None = "medium"
+    ) -> LLMResult:
         kwargs = self.request_kwargs(system, user, schema, effort)
         last_problem = ""
         for _ in range(1 + RETRIES_ON_INVALID_OUTPUT):
