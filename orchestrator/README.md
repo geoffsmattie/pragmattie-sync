@@ -55,6 +55,18 @@ docker compose exec orchestrator python -m sdlc.approver approve 212       # add
 
 The GitHub commands need `GITHUB_TOKEN` and `GITHUB_REPO` in your `.env` (see the root README).
 
+## Watching shadow mode
+
+With `ORCHESTRATOR_MODE=shadow`, open any pull request and within about 30 seconds the `agent`
+service posts one comment naming the tier and its reasons, sets a `tier:Tn` label, and sets the
+`risk-gate` commit status to **success** no matter what it found (shadow mode never blocks a
+merge). The comment says what enforce mode would have done instead.
+
+```bash
+docker compose logs -f agent          # what the poller is doing right now
+docker compose exec orchestrator python -m sdlc.approver pending   # any T3 needing the simulated approval
+```
+
 ## Synthetic vs real data
 
 Every signal row records its `source`: `synthetic` or `github`. The dashboard always says how
