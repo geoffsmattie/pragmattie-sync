@@ -17,9 +17,13 @@ database to keep what it learns.
 | `sdlc/scoring.py` | 4 | Stage one of the risk score: ten weighted signals, point-in-time, capped at 100 |
 | `sdlc/governance.py` | 4 | Score to tier: bands, floors (highest wins), the docs-only cap, and the fail-safe fallback |
 | `sdlc/calibration.py` + `sdlc/risk.py` | 4 | `python -m sdlc.risk explain <pr>` and `calibrate`: read-only views of the score |
-| `sdlc/audit.py` | 4 | Append-only audit trail (`sdlc_agent_decisions`), one row per agent run |
-| `sdlc/agents/` | 4 | The PR risk agent: `llm.py` (one strict Claude call), `pr_risk.py` (score, clamp, tier), `gate.py`, `comment.py`, `github_effects.py` |
-| `sdlc/runner.py` | 4 | Polls GitHub and runs the risk agent (`ORCHESTRATOR_MODE`: off, shadow or enforce) |
+| `sdlc/audit.py` | 4 | Append-only audit trail (`sdlc_agent_decisions`), one row per agent run, either agent |
+| `sdlc/agents/llm.py`, `pr_risk.py`, `gate.py`, `comment.py` | 4 | PR risk agent: score, the ±15 clamp, the tier from code, the `risk-gate` state, the PR comment |
+| `sdlc/agents/github_effects.py` | 4 | Every write either agent makes to GitHub, in one place, gated by `ORCHESTRATOR_MODE` |
+| `sdlc/modules.py`, `sdlc/similarity.py` | 4 | Module descriptions and word-overlap nearest-neighbour lookup, for the triage agent's prompt |
+| `sdlc/agents/triage.py`, `triage_comment.py` | 4 | Triage agent: classification (Haiku 4.5), and the issue comment |
+| `sdlc/runner.py` | 4 | Polls GitHub and drives both agents (`ORCHESTRATOR_MODE`: off, shadow or enforce) |
+| `sdlc/issue_runner.py` | 4 | The triage agent's own poll loop, version-triggered on an issue's title+body, driven by `sdlc/runner.py` |
 | `policies/approvers.yaml` + `sdlc/approver.py` | 4 | Simulated second approver for tier T3, manual only, recorded as `simulated` in `sdlc_approvals` |
 
 ## Everyday commands
@@ -45,7 +49,13 @@ docker compose exec orchestrator python -m sdlc.risk calibrate --generated 30   
 # The PR risk agent. Ships switched off; see ORCHESTRATOR_MODE in .env.
 docker compose exec orchestrator python -m sdlc.runner dry-run 3       # exact request and cost ceiling; calls nothing
 docker compose exec orchestrator python -m sdlc.runner try 3 --yes     # one real Claude call; writes nothing
-docker compose --profile agents up -d                                   # start polling (uses the mode in .env)
+
+# The triage agent, its own dry-run/try. Same ORCHESTRATOR_MODE, same off-by-default.
+docker compose exec orchestrator python -m sdlc.issue_runner dry-run 12
+docker compose exec orchestrator python -m sdlc.issue_runner try 12 --yes
+
+# Start polling: sdlc.runner's run loop drives both agents together, one container, one schedule
+docker compose --profile agents up -d
 
 # Simulated second approver for tier T3 (manual only)
 docker compose exec orchestrator python -m sdlc.approver pending           # what is waiting for you

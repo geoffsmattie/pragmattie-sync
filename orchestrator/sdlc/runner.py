@@ -1,15 +1,21 @@
-"""Poll GitHub and run the PR risk agent. (The demo is local-only, so it polls; no webhooks.)
+"""Poll GitHub and run both agents. (The demo is local-only, so it polls; no webhooks.)
+
+`run` and `once` drive the PR risk agent (this module) and the triage agent
+(sdlc/issue_runner.py) together, one poll cycle each, in one process — one container for the
+whole orchestrator, per the blueprint's shared ORCHESTRATOR_MODE kill switch. The two agents
+are otherwise independent: see sdlc/issue_runner.py for triage's own trigger and autonomy rules.
 
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.runner run            # poll forever, every POLL_SECONDS
-    python -m sdlc.runner once           # one poll, then exit
-    python -m sdlc.runner dry-run 7      # show the exact request for PR #7; calls nothing
+    python -m sdlc.runner run            # poll both agents forever, every POLL_SECONDS
+    python -m sdlc.runner once           # one poll of both agents, then exit
+    python -m sdlc.runner dry-run 7      # show the exact PR risk request for PR #7; calls nothing
     python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes nothing
+For the triage agent's own dry-run/try commands, use `python -m sdlc.issue_runner`.
 
-ORCHESTRATOR_MODE decides what a poll may do:
+ORCHESTRATOR_MODE decides what a poll may do, for both agents:
     off      nothing at all: no reads, no writes, no API calls
-    shadow   comment, label and record decisions, but the risk-gate status always passes
-    enforce  the status is real: pending until the tier's people have signed off
+    shadow   comment, label and record decisions, but the PR risk-gate status always passes
+    enforce  the risk-gate status is real: pending until the tier's people have signed off
 One decision per PR commit: a new push is assessed once, and the sign-off boxes start empty.
 A failed run is retried up to three times, five minutes apart, and fails closed until it works.
 """
@@ -43,6 +49,7 @@ from sdlc.calibration import facts_of
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError
+from sdlc.issue_runner import IssueRunner
 from sdlc.scoring import compute_features, features_digest, score_features
 from sdlc.signals.github import Collector
 from sdlc.tables import Approval, PullRequest
@@ -88,7 +95,14 @@ class Runner:
         number, sha = item["number"], item["head"]["sha"]
         with SessionLocal() as db:
             pr = Collector(db, self.gh).collect_pull_request(item)
-            decisions = decisions_for(db, AGENT, pr, sha)
+            decisions = decisions_for(
+                db,
+                AGENT,
+                subject_type="pr",
+                subject_source=pr.source,
+                subject_id=pr.number,
+                head_sha=sha,
+            )
             good = next((d for d in decisions if d.status == "ok"), None)
             comment = self.effects.find_comment(number)
 
@@ -131,7 +145,9 @@ class Runner:
             db,
             agent=AGENT,
             agent_version=AGENT_VERSION,
-            pr=pr,
+            subject_type="pr",
+            subject_source=pr.source,
+            subject_id=pr.number,
             trigger="poll",
             now=now,
             head_sha=sha,
@@ -260,25 +276,30 @@ def main(argv: list[str] | None = None) -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
     runner_mode = settings.orchestrator_mode
     try:
-        runner = Runner(GitHubClient(), StructuredLLM(), load_policy(), runner_mode)
+        gh = GitHubClient()
+        runner = Runner(gh, StructuredLLM(), load_policy(), runner_mode)
+        triage_runner = IssueRunner(gh, StructuredLLM(model=settings.triage_model), runner_mode)
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
     if args.command in ("dry-run", "try"):
         _look(runner, args)
     elif args.command == "once":
-        print(runner.poll_once())
+        print({"pr_risk": runner.poll_once(), "triage": triage_runner.poll_once()})
     else:
         log.info(
-            "risk agent started in %s mode, polling every %ss", runner_mode, settings.poll_seconds
+            "risk and triage agents started in %s mode, polling every %ss",
+            runner_mode,
+            settings.poll_seconds,
         )
         while True:
-            try:
-                summary = runner.poll_once()
-                if summary.get("assessed") or summary.get("errors"):
-                    log.info("poll: %s", summary)
-            except Exception:  # noqa: BLE001 - one bad poll must not stop the loop
-                log.exception("poll failed")
+            for name, agent in (("pr_risk", runner), ("triage", triage_runner)):
+                try:
+                    summary = agent.poll_once()
+                    if summary.get("assessed") or summary.get("errors"):
+                        log.info("%s poll: %s", name, summary)
+                except Exception:  # noqa: BLE001 - one bad poll must not stop the loop or the other agent
+                    log.exception("%s poll failed", name)
             time.sleep(settings.poll_seconds)
 
 

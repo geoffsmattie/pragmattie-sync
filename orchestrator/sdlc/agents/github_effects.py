@@ -4,19 +4,22 @@ Reads (a PR's details, its diff, the current comment) always work. Every write g
 `_write`, which does nothing when ORCHESTRATOR_MODE is `off` and reports what happened either way,
 so the audit row records the effects. One failing write never stops the others.
 
-Writes the agents can make, and nothing else: one comment per PR (kept up to date), one `tier:Tn`
-label, and the `risk-gate` commit status. They never merge, approve, close, push or edit
-branch protection.
+Writes the agents can make, and nothing else: one comment per PR or issue (kept up to date), a
+handful of prefixed labels (`tier:Tn` on PRs; `module:`/`type:`/`priority:`/`points:` on issues),
+plain add-only labels (`needs-info`, `possible-duplicate`), and the `risk-gate` commit status.
+They never merge, approve, close, push, edit issue text, or edit branch protection.
 """
 
 from collections.abc import Callable
 
 from sdlc.agents.comment import MARKER
+from sdlc.backlog import LABEL_COLORS
 from sdlc.github_client import GitHubClient, GitHubError
 
 STATUS_CONTEXT = "risk-gate"
 TIER_LABELS = {"T0": "0E8A16", "T1": "FBCA04", "T2": "F9A03F", "T3": "B60205"}
 TIER_LABEL_DESCRIPTION = "Governance tier set by the PR risk agent"
+DIMENSION_DESCRIPTION = "Set by the triage agent"
 
 
 class Effects:
@@ -32,12 +35,18 @@ class Effects:
     def read_diff(self, number: int) -> str:
         return self.gh.get_text(f"/repos/{{repo}}/pulls/{number}", "application/vnd.github.diff")
 
-    def find_comment(self, number: int) -> dict | None:
-        """The risk agent's own comment on this PR, if it has posted one."""
+    def find_comment(self, number: int, marker: str = MARKER) -> dict | None:
+        """An agent's own comment on this PR or issue, found by its HTML marker."""
         for comment in self.gh.paginate(f"/repos/{{repo}}/issues/{number}/comments"):
-            if MARKER in (comment.get("body") or ""):
+            if marker in (comment.get("body") or ""):
                 return comment
         return None
+
+    def read_issue(self, number: int) -> dict:
+        return self.gh.get(f"/repos/{{repo}}/issues/{number}")
+
+    def read_labels(self, number: int) -> list[str]:
+        return [label["name"] for label in self.gh.get(f"/repos/{{repo}}/issues/{number}/labels")]
 
     # --- writes: gated by the mode -----------------------------------------------------------
 
@@ -93,5 +102,61 @@ class Effects:
                     pass  # it already exists
                 self.gh.post(f"/repos/{{repo}}/issues/{number}/labels", {"labels": [wanted]})
             return {"label": wanted}
+
+        return self._write("label", action)
+
+    def set_dimension_label(self, number: int, prefix: str, value: str) -> dict:
+        """Replace whatever `<prefix>:*` label an issue has with `<prefix>:<value>`.
+
+        Same shape as `set_tier_label`, generalised for the triage agent's four dimensions
+        (module, type, priority, points), whose colours already exist in sdlc/backlog.py.
+        """
+        wanted = f"{prefix}:{value}"
+
+        def action() -> dict:
+            current = self.read_labels(number)
+            for name in current:
+                if name.startswith(f"{prefix}:") and name != wanted:
+                    self.gh.delete(f"/repos/{{repo}}/issues/{number}/labels/{name}")
+            if wanted not in current:
+                try:
+                    self.gh.post(
+                        "/repos/{repo}/labels",
+                        {
+                            "name": wanted,
+                            "color": LABEL_COLORS[prefix],
+                            "description": DIMENSION_DESCRIPTION,
+                        },
+                    )
+                except GitHubError:
+                    pass  # it already exists
+                self.gh.post(f"/repos/{{repo}}/issues/{number}/labels", {"labels": [wanted]})
+            return {"label": wanted}
+
+        return self._write("label", action)
+
+    def add_label_if_absent(self, number: int, name: str, color: str, description: str) -> dict:
+        """Add a plain flag label (needs-info, possible-duplicate). Never removed automatically:
+        a human clears it once they've dealt with it."""
+
+        def action() -> dict:
+            if name in self.read_labels(number):
+                return {"label": name, "already_present": True}
+            try:
+                self.gh.post(
+                    "/repos/{repo}/labels",
+                    {"name": name, "color": color, "description": description},
+                )
+            except GitHubError:
+                pass
+            self.gh.post(f"/repos/{{repo}}/issues/{number}/labels", {"labels": [name]})
+            return {"label": name}
+
+        return self._write("label", action)
+
+    def remove_label(self, number: int, name: str) -> dict:
+        def action() -> dict:
+            self.gh.delete(f"/repos/{{repo}}/issues/{number}/labels/{name}")
+            return {"removed": name}
 
         return self._write("label", action)

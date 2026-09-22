@@ -82,6 +82,7 @@ class FakeGitHub:
 
     def __init__(self):
         self.prs: dict[int, dict] = {}
+        self.issues: dict[int, dict] = {}
         self.diffs: dict[int, str] = {}
         self.files: dict[int, list[str]] = {}
         self.comments: dict[int, list[dict]] = {}
@@ -117,8 +118,32 @@ class FakeGitHub:
     def push(self, number, sha):
         self.prs[number]["head"]["sha"] = sha
 
-    def comment_on(self, number):
-        mine = [c for c in self.comments.get(number, []) if "pragmattie-risk-gate" in c["body"]]
+    def open_issue(
+        self,
+        number,
+        *,
+        title="Lead import is slow",
+        body="It times out on big files.",
+        state="open",
+    ):
+        self.issues[number] = {
+            "number": number,
+            "title": title,
+            "body": body,
+            "state": state,
+            "user": {"login": "someone"},
+            "created_at": "2026-09-21T09:00:00Z",
+            "updated_at": "2026-09-21T09:00:00Z",
+        }
+
+    def edit_issue(self, number, *, title=None, body=None):
+        if title is not None:
+            self.issues[number]["title"] = title
+        if body is not None:
+            self.issues[number]["body"] = body
+
+    def comment_on(self, number, marker="pragmattie-risk-gate"):
+        mine = [c for c in self.comments.get(number, []) if marker in c["body"]]
         return mine[0] if mine else None
 
     def tick(self, number, label):
@@ -134,18 +159,35 @@ class FakeGitHub:
 
         return GitHubClient(token="t", repo=REPO, transport=httpx.MockTransport(self.handle))
 
+    def _should_fail(self, method: str, path: str) -> bool:
+        """Each entry in `fail` is a bare path substring (any method) or "METHOD:substring"."""
+        for rule in self.fail:
+            want_method, _, want_path = rule.partition(":")
+            if want_path and want_method in ("GET", "POST", "PATCH", "DELETE"):
+                if method == want_method and want_path in path:
+                    return True
+            elif rule in path:
+                return True
+        return False
+
     # -- the API ------------------------------------------------------------------------------
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
         self.requests.append((method, path))
         body = _json.loads(request.content) if request.content else {}
-        if any(part in path for part in self.fail):
+        if self._should_fail(method, path):
             return httpx.Response(500, json={"message": "fake github: boom"})
         base = f"/repos/{REPO}"
 
         if method == "GET" and path == f"{base}/pulls":
             return httpx.Response(200, json=[p for p in self.prs.values() if p["state"] == "open"])
+        if method == "GET" and path == f"{base}/issues":
+            return httpx.Response(
+                200, json=[i for i in self.issues.values() if i["state"] == "open"]
+            )
+        if method == "GET" and (m := _re.fullmatch(rf"{base}/issues/(\d+)", path)):
+            return httpx.Response(200, json=self.issues[int(m[1])])
         if m := _re.fullmatch(rf"{base}/pulls/(\d+)", path):
             n = int(m[1])
             if "diff" in request.headers.get("accept", ""):
@@ -199,3 +241,25 @@ class FakeGitHub:
     def last_status(self, sha=None):
         rows = [s for s in self.statuses if sha is None or s["sha"] == sha]
         return rows[-1] if rows else None
+
+
+def triage_answer(
+    module="leads",
+    type="bug",
+    priority="p2",
+    points=3,
+    duplicate_of=0,
+    confidence=0.8,
+    questions=None,
+    rationale="Looks like a bug in lead import.",
+):
+    return {
+        "module": module,
+        "type": type,
+        "priority": priority,
+        "estimate_points": points,
+        "duplicate_of": duplicate_of,
+        "confidence": confidence,
+        "rationale": rationale,
+        "questions": questions or [],
+    }

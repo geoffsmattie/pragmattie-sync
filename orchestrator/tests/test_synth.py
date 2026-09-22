@@ -71,12 +71,22 @@ def test_reset_also_clears_approvals_and_audit_rows_on_synthetic_prs(db, history
     db.commit()
     assert db.scalar(select(func.count()).select_from(Approval)) == 1
 
-    first = record_decision(db, agent="pr_risk", agent_version="v1", pr=pr, trigger="manual")
+    first = record_decision(
+        db,
+        agent="pr_risk",
+        agent_version="v1",
+        subject_type="pr",
+        subject_source=pr.source,
+        subject_id=pr.number,
+        trigger="manual",
+    )
     record_decision(
         db,
         agent="pr_risk",
         agent_version="v1",
-        pr=pr,
+        subject_type="pr",
+        subject_source=pr.source,
+        subject_id=pr.number,
         trigger="manual",
         supersedes_id=first.id,  # a correction pointing at an earlier row
     )

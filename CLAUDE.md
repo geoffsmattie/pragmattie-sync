@@ -209,26 +209,54 @@ Decisions made while building it:
 
 Open items:
 
-- **TODO:** the PR risk agent is built and tested with Claude and GitHub mocked, but it has never
-  run for real. Next: a first live call (`python -m sdlc.runner try <pr> --yes`), then shadow mode
-  for a full sprint, then read the results before enforcing.
+- **PR risk agent: built, live-tested, running in shadow.** Its first real call (2026-09-20, PR
+  #3) and its first full shadow-mode run (2026-09-22, PR #5 — comment, `tier:T0` label and a
+  passing `risk-gate` status all posted correctly) both worked. **TODO:** shadow mode needs a full
+  sprint's worth of real PRs, and its results read, before `risk-gate` becomes a required check.
   - Pieces: `sdlc/agents/llm.py` (one strict Claude call), `pr_risk.py` (score, the ±15 clamp, the
     tier from code), `gate.py` (the `risk-gate` state), `comment.py` (the PR comment and its
     sign-off boxes), `github_effects.py` (the only writes: one comment, one `tier:` label, the
-    status), and `sdlc/runner.py` (the poll loop).
-  - Start it with `docker compose --profile agents up -d`. `ORCHESTRATOR_MODE` ships as `off`,
-    which does nothing at all; `dry-run <pr>` shows the exact request and a cost ceiling and calls
-    nothing; `try <pr>` needs `--yes` to spend money and writes nothing.
+    status), and `sdlc/runner.py` (the poll loop, now shared with triage — see below).
+  - `ORCHESTRATOR_MODE` ships as `off`, which does nothing at all; `dry-run <pr>` shows the exact
+    request and a cost ceiling and calls nothing; `try <pr>` needs `--yes` to spend money and
+    writes nothing. Start polling with `docker compose --profile agents up -d`.
   - A new commit is assessed once and its sign-off boxes start empty. A failed run fails closed to
     the floor tier or T2 and is retried up to three times, five minutes apart.
   - The agent never merges, approves, closes or pushes, and the model can't name a tier.
-  - Not done: the token needs "Commit statuses" and "Pull requests" write access before shadow
-    mode can post; CI failures reach the score only when the collector runs.
+- **Triage agent: built and tested with Claude and GitHub mocked, never run live.** Haiku 4.5,
+  low effort (classification against a fixed vocabulary). **TODO:** a first live call
+  (`python -m sdlc.issue_runner try <issue> --yes`) needs Geoff's go-ahead, the way the PR risk
+  agent's did, before it runs in the shared poll loop for real.
+  - Pieces: `sdlc/modules.py` (module descriptions for the prompt), `sdlc/similarity.py`
+    (deterministic word-overlap nearest-neighbour lookup — no embeddings), `sdlc/agents/triage.py`
+    (classification: module/type/priority/points/duplicate_of/confidence/questions),
+    `triage_comment.py` (the issue comment), and `sdlc/issue_runner.py` (its own poll loop,
+    driven by `sdlc/runner.py`'s `run`/`once` alongside the PR risk agent — one container, one
+    schedule, per the blueprint's shared `ORCHESTRATOR_MODE`).
+  - **Trigger:** an issue is triaged once per distinct title+body ("version", a content hash —
+    not the issue's `updated_at`, since the agent's own label/comment writes would otherwise bump
+    that and make it re-trigger itself). Editing the title or body is a new version. A `retriage`
+    label forces another run even on unchanged content, bypassing the automatic-failure backoff
+    (that backoff exists only to stop the agent hammering the API on its own repeated failures,
+    not to throttle a deliberate human action), and is removed once that run succeeds.
+  - **Autonomy:** only ever replaces `module:`/`type:`/`priority:`/`points:` labels, add-only adds
+    `needs-info` (low confidence or open questions) and `possible-duplicate` (only when the model
+    names a candidate it was actually shown — a hallucinated issue number is dropped in code), and
+    keeps one comment up to date. Never closes an issue, assigns it, or edits its text.
+  - **Human overrides:** if a human has changed a dimension label since the agent's last
+    successful run on that issue, later runs leave that dimension alone and record the difference
+    on the new decision's `human_override` field, rather than fighting the correction.
+  - **Open question for Geoff:** the acceptance bars (module 85%, type 90%, points within one
+    step 70%) need an evaluation set "labelled by Geoff first" — real human judgement, not
+    Claude's. `orchestrator/backlog/backlog.yaml` already has 40 issues with module/type/points
+    set, which is the right size, but **it needs to be Geoff's own judgement on each one, not
+    something a past session wrote, or grading against it would just check the agent against
+    another AI's guesses.** Ask him before building the eval harness against it.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - **TODO:** the audit table `sdlc_agent_decisions` (append-only, one row per agent run, with an
-  `attempt` number so a failed run can be retried) is written by the risk agent on every run. The
-  triage agent and the Decision log tab in the web app don't exist yet.
+  `attempt` number so a failed run can be retried) is written by both agents on every run. The
+  Decision log tab in the web app doesn't exist yet.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
   depending only on the random draw. So the rubric is graded on 30 generated histories pooled
   (`python -m sdlc.risk calibrate --generated 30`). The bars were fixed on 2026-09-20, before the
