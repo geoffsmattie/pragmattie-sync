@@ -1,0 +1,327 @@
+{
+  "description": "Triage evaluation set: Geoff's own module/type/points (and optional priority) for the 40 real backlog issues (#6-#45), labelled blind (no agent or Cowork labels shown) on 2026-09-23 via the labelling sheet in this folder. The ground truth for `python -m sdlc.eval`.",
+  "labelled_by": "Geoff",
+  "labelled_on": "2026-09-23",
+  "issues": [
+    {
+      "issue": 6,
+      "module": "leads",
+      "type": "feature",
+      "points": 2,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 7,
+      "module": "leads",
+      "type": "feature",
+      "points": 1,
+      "priority": "p3",
+      "note": null
+    },
+    {
+      "issue": 8,
+      "module": "leads",
+      "type": "feature",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9,
+      "module": "leads",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 10,
+      "module": "leads",
+      "type": "bug",
+      "points": 1,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 11,
+      "module": "leads",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 12,
+      "module": "accounts",
+      "type": "feature",
+      "points": 2,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 13,
+      "module": "accounts",
+      "type": "feature",
+      "points": 5,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 14,
+      "module": "accounts",
+      "type": "feature",
+      "points": 8,
+      "priority": null,
+      "note": "No description"
+    },
+    {
+      "issue": 15,
+      "module": "pipeline",
+      "type": "bug",
+      "points": 5,
+      "priority": "p1",
+      "note": "Title was not clear and no description"
+    },
+    {
+      "issue": 16,
+      "module": "pipeline",
+      "type": "feature",
+      "points": 3,
+      "priority": "p3",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 17,
+      "module": "pipeline",
+      "type": "feature",
+      "points": 1,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 18,
+      "module": "pipeline",
+      "type": "feature",
+      "points": 1,
+      "priority": "p3",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 19,
+      "module": "pipeline",
+      "type": "feature",
+      "points": 2,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 20,
+      "module": "pipeline",
+      "type": "bug",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 21,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 22,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 5,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 23,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 24,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 2,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 25,
+      "module": "forecasting",
+      "type": "bug",
+      "points": 5,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 26,
+      "module": "integrations",
+      "type": "feature",
+      "points": 3,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 27,
+      "module": "integrations",
+      "type": "chore",
+      "points": 8,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 28,
+      "module": "integrations",
+      "type": "chore",
+      "points": 3,
+      "priority": "p3",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 29,
+      "module": "integrations",
+      "type": "chore",
+      "points": 5,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 30,
+      "module": "integrations",
+      "type": "bug",
+      "points": 5,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 31,
+      "module": "billing_auth",
+      "type": "feature",
+      "points": 5,
+      "priority": "p2",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 32,
+      "module": "billing_auth",
+      "type": "feature",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 33,
+      "module": "billing_auth",
+      "type": "feature",
+      "points": 8,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 34,
+      "module": "platform",
+      "type": "feature",
+      "points": 1,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 35,
+      "module": "billing_auth",
+      "type": "bug",
+      "points": 3,
+      "priority": "p1",
+      "note": "Knowing the difficulty to do this"
+    },
+    {
+      "issue": 36,
+      "module": "platform",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 37,
+      "module": "platform",
+      "type": "chore",
+      "points": 3,
+      "priority": "p1",
+      "note": "Not sure what this is"
+    },
+    {
+      "issue": 38,
+      "module": "platform",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 39,
+      "module": "platform",
+      "type": "chore",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 40,
+      "module": "orchestrator",
+      "type": "feature",
+      "points": 8,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 41,
+      "module": "orchestrator",
+      "type": "chore",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 42,
+      "module": "orchestrator",
+      "type": "feature",
+      "points": 5,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 43,
+      "module": "orchestrator",
+      "type": "feature",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 44,
+      "module": "orchestrator",
+      "type": "chore",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 45,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    }
+  ]
+}

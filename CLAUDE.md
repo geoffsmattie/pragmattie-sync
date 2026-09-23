@@ -287,13 +287,16 @@ Open items:
   `src/components/decisions/DecisionDetailDrawer.vue`, `src/decisions.js` (pure formatting
   helpers, unit-tested) — uses Vuetify's server-side data table since this log is meant to grow
   for as long as the agents run, not stay small like a demo table.
-- **TODO — evaluation set.** The acceptance bars (module 85%, type 90%, points within one step
-    70%) need an evaluation set "labelled by Geoff first" — real human judgement, not Claude's.
-    `orchestrator/backlog/backlog.yaml` has 40 issues with module/type/points set, but Geoff
-    confirmed on 2026-09-23 that **Cowork wrote those, not him** — so it cannot be the eval set;
-    grading against it would just check the agent against another AI's guesses. He needs to
-    hand-label a real set (his own module/type/points call on 40 real or realistic issues) before
-    the eval harness can be built and the acceptance bars checked.
+- **Evaluation set: labelled by Geoff (2026-09-23), graded by `python -m sdlc.eval`.** Geoff's own
+  module/type/points (and priority, notes) for the 40 real backlog issues, labelled blind on the
+  labelling sheet, live in `orchestrator/eval/triage_eval_set.json`. (`backlog.yaml` is Cowork's and
+  is not the eval set.) `sdlc.eval` grades the agent's latest successful decision per issue from
+  the audit table (no API calls) against the bars fixed beforehand: module 85%, type 90%, points
+  within one step 70%; priority reported, not gated. **First grading (prompt `triage-v1`): module
+  95% pass, type 88% fail, points-within-one 65% fail.** Read, not just counted: the prompt defined
+  neither the types nor the points scale (it anchored points on simulated `actual_days`, and ran
+  high: higher than Geoff on 20 issues, lower on 11); 4 of 5 type misses are integration/tooling
+  work Geoff labelled `chore` that is conventionally a `feature`, a definitions question for Geoff.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
