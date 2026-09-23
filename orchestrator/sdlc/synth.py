@@ -13,6 +13,8 @@ Patterns deliberately built in (the models in Phase 4-5 should rediscover them):
   * Velocity dips in holiday sprints and in the sprint after a big release.
   * Engineer profiles: Marcus ships big PRs with few defects; Dana ships small, steady
     PRs; Tomas (newer) has slower reviews and more rework.
+  * Four epics (the same names as the real backlog's) run through the last four sprints,
+    each with unscheduled stories still to do, so epics have a pace and a finish to forecast.
 
 Usage:
     python -m sdlc.synth              # add history (refuses if synthetic data exists)
@@ -90,6 +92,26 @@ WORK = {
     "platform": ["API pagination", "audit logging", "search indexing", "job queue"],
 }
 VERBS = {"feature": ["Add", "Build", "Support"], "bug": ["Fix", "Resolve"], "chore": ["Refactor"]}
+# epic: (its module, work still in its backlog). Names match orchestrator/backlog/backlog.yaml.
+EPICS = {
+    "AI lead scoring": (
+        "leads",
+        ["score explanations", "scoring model retraining", "score history", "score thresholds"],
+    ),
+    "Multi-currency forecasting": (
+        "forecasting",
+        ["currency conversion rates", "per-currency quota", "FX rollup math", "FX snapshots"],
+    ),
+    "Salesforce import": (
+        "integrations",
+        ["Salesforce field mapping", "Salesforce OAuth", "import dry run", "import conflicts"],
+    ),
+    "SOC 2 audit logging": (
+        "platform",
+        ["audit event schema", "audit log retention", "audit log export", "admin access logs"],
+    ),
+}
+EPIC_SPRINTS = 6  # epics started this many sprints ago (the forecast's whole history window)
 SUITES = ["api", "web", "migrations", "integrations-e2e"]
 MODULE_LABELS = {
     "leads": "Leads",
@@ -141,9 +163,8 @@ def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[st
     db.flush()
     personas = {p.login: p for p in PERSONAS}
 
-    current_start = _monday(today) - timedelta(
-        days=SPRINT_DAYS if _monday(today).isocalendar()[1] % 2 else 0
-    )
+    # Sprints start on even ISO weeks, so in an odd week the current one began last Monday.
+    current_start = _monday(today) - timedelta(days=7 if _monday(today).isocalendar()[1] % 2 else 0)
     first_start = current_start - timedelta(days=SPRINT_DAYS * (SPRINT_COUNT - 1))
     release_sprints = {3, 7, 11}  # sprints ending in a big release
 
@@ -240,10 +261,54 @@ def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[st
                     merged_prs.append(pr)
                     risks.append(risk)
 
+    counts["epic_backlog"] = _add_epics(db, seed, now, current_start, issue_number)
     _assign_incidents(rng, merged_prs, risks)
     counts["deployments"], counts["incidents"] = _deploy(db, rng, merged_prs, now)
     db.commit()
     return counts
+
+
+def _add_epics(db: Session, seed: int, now: datetime, current_start: date, last_number: int) -> int:
+    """Tag recent feature work with its epic and add each epic's unscheduled backlog.
+
+    Uses its own random stream, so the rest of the history (and the risk calibration that is
+    locked against it) comes out exactly as it did before epics existed."""
+    rng = random.Random(f"{seed}:epics")
+    since = datetime.combine(
+        current_start - timedelta(days=SPRINT_DAYS * (EPIC_SPRINTS - 1)), time()
+    )
+    by_module = {module: name for name, (module, _) in EPICS.items()}
+    recent = db.scalars(
+        select(Issue)
+        .where(Issue.source == SOURCE, Issue.type == "feature", Issue.created_at >= since)
+        .order_by(Issue.id)
+    )
+    for issue in recent:
+        if issue.module in by_module and rng.random() < 0.8:
+            issue.epic = by_module[issue.module]
+
+    added = 0
+    for name, (module, work) in EPICS.items():
+        for _ in range(rng.randint(4, 8)):
+            last_number += 1
+            added += 1
+            db.add(
+                Issue(
+                    source=SOURCE,
+                    external_id=f"syn-issue-{last_number}",
+                    number=last_number,
+                    title=f"{rng.choice(VERBS['feature'])} {rng.choice(work)}",
+                    module=module,
+                    type="feature",
+                    priority=rng.choices(["p1", "p2", "p3"], [20, 60, 20])[0],
+                    estimate_points=rng.choice([2, 3, 3, 5, 5, 8]),
+                    state="open",
+                    created_at=_at(now.date() - timedelta(days=rng.randint(3, 40)), 10),
+                    epic=name,
+                )
+            )
+    db.flush()
+    return added
 
 
 def _make_pr(rng, number, part, parts, issue, author, personas, engineers, opened, now, seed):

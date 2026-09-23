@@ -1,10 +1,12 @@
+from datetime import datetime
+
 from sqlalchemy import func, select
 
 from sdlc import approver
 from sdlc.audit import record_decision
 from sdlc.metrics import ci_health, quality_by_module, sprint_velocity
 from sdlc.synth import build, has_synthetic, reset
-from sdlc.tables import AgentDecision, Approval, Incident, PullRequest, Sprint
+from sdlc.tables import AgentDecision, Approval, Incident, Issue, PullRequest, Sprint
 from tests.conftest import NOW
 
 
@@ -22,6 +24,34 @@ def test_nothing_is_dated_in_the_future(db, history):
     assert db.scalar(select(func.max(Incident.opened_at))) <= NOW
     last = db.scalar(select(Sprint).order_by(Sprint.start_date.desc()))
     assert last.start_date <= NOW.date() <= last.end_date  # current sprint in progress
+
+
+def test_a_sprint_is_in_progress_whichever_week_the_history_is_built(db):
+    for now in (datetime(2026, 9, 18, 12), datetime(2026, 9, 23, 12)):  # even, odd ISO week
+        reset(db)
+        build(db, now=now)
+        last = db.scalar(select(Sprint).order_by(Sprint.start_date.desc()))
+        assert last.start_date <= now.date() <= last.end_date, now
+
+
+def test_epics_have_a_pace_and_a_backlog_left(db, history):
+    epics = {}
+    for epic, state, sprint_id in db.execute(
+        select(Issue.epic, Issue.state, Issue.sprint_id).where(Issue.epic.is_not(None))
+    ):
+        e = epics.setdefault(epic, {"closed": 0, "unscheduled": 0})
+        e["closed"] += state == "closed"
+        e["unscheduled"] += sprint_id is None and state == "open"
+    assert set(epics) == {
+        "AI lead scoring",
+        "Multi-currency forecasting",
+        "Salesforce import",
+        "SOC 2 audit logging",
+    }
+    for name, e in epics.items():
+        assert e["closed"] >= 5, name  # a pace to forecast from
+        assert 4 <= e["unscheduled"] <= 8, name  # and work still to do
+    assert history["epic_backlog"] == sum(e["unscheduled"] for e in epics.values())
 
 
 def test_built_in_patterns_are_present(db, history):

@@ -76,6 +76,9 @@ class Issue(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     sprint_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_sprints.id"))
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_engineers.id"))
+    # The epic this story belongs to, by name (an `epic:<name>` label on a real issue). Epics
+    # are forecast on their own, so a story added to one live moves that epic's date.
+    epic: Mapped[str | None] = mapped_column(String(80), index=True)
 
     assignee: Mapped[Engineer | None] = relationship()
 

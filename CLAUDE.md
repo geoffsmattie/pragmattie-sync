@@ -304,3 +304,31 @@ Open items:
   them. The synthetic incidents come from the same factors the rubric reads, so this is a wiring
   check, not proof the score predicts real incidents. Re-run `calibrate` on real GitHub history
   once it exists, and tune weights, never outcomes.
+- **Evaluation-set labelling sheet (2026-09-23):** a private claude.ai page
+  (https://claude.ai/artifact/6nYqQUpMV1iemzkYJK6Bei) showing the 40 real backlog issues (#6–#45)
+  as the agent saw them, with no agent or Cowork labels. Geoff's answers save to the page's own
+  database (collection `labels`, one doc per issue: module/type/points, optional priority/note),
+  which Claude reads with the ArtifactData tool. Source: `orchestrator/eval/` (template + issues).
+
+### Phase 5 decisions (2026-09-23)
+
+Branch `phase-5-forecasting`. The blueprint has no detailed Phase 5 spec; these were decided with
+Geoff:
+
+- **Epics exist in the data.** `sdlc_issues.epic` (migration `0006_issue_epic`); real issues get it
+  from their `epic:<name>` label, and the synthetic history tags the last six sprints' feature work
+  with four epics named like the real backlog's, plus 4–8 unscheduled stories each still to do (its
+  own random stream, so the rest of the history and the risk calibration are unchanged).
+- **Real issues are stories under epics.** Nothing assigns real issues a sprint, so the live demo
+  moves an **epic's** forecast: a story opened under an epic pushes that epic's P50/P85 out. The
+  sprint forecast covers simulated work only. GitHub milestones (real issues in sprints) were
+  considered and left for later.
+- **The planner agent proposes on the dashboard only,** stored in the audit table like every other
+  agent decision. It never writes to GitHub (proposals name simulated items, and it would leave
+  residue after every demo).
+- **The forecast engine** (`sdlc/forecast.py`, `python -m sdlc.forecast`): Monte Carlo over the
+  last six sprints' daily throughput, 10,000 runs, seeded per sprint/epic and day so a demo
+  repeats. Sprints get P50/P85 and an on-time probability; epics get P50/P85 from their own pace.
+  At-risk items come from module days-per-point, each with a plain-English reason.
+- The synthetic history's current sprint was anchored two weeks back on odd ISO weeks (no sprint
+  in progress); fixed, with a test for both parities.
