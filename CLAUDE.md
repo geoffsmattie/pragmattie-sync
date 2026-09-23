@@ -312,9 +312,26 @@ Open items:
     within one step 82% pass.** The type misses are one pattern: 6 issues Geoff called `chore`
     that the agent called `feature` (Salesforce stage mapping, email sync, webhooks, cursor
     pagination, the PR risk model, GitHub signal collection): integration, infrastructure and
-    internal-tooling work. The prompt defines none of the types. **TODO:** Geoff's definition of
-    `chore` goes into the prompt (as `triage-v2`), then one blind re-run. The eval set doubles as
-    the tuning set, so change the prompt once for the pattern, not repeatedly to the score.
+    internal-tooling work. The prompt defined none of the types. The eval set doubles as the
+    tuning set, so the prompt changes once for the pattern, not repeatedly to the score.
+  - **`triage-v2` (2026-09-23)** defines the types. `chore` is Geoff's wording: "a change to the
+    product that increases value and helps the product work better, but is not necessarily visible
+    to the end user". `feature`, `bug`, the examples and the tie-breaker ("would the end user see
+    the change?") are Claude's. **Blind re-run: module 90% pass, type 82% fail, points within one
+    step 82% pass** (about 9¢). It fixed one chore miss (GitHub signal collection) but still called
+    5 of Geoff's chores features (Salesforce stage mapping, email sync, webhooks, cursor
+    pagination, the PR risk model), and called 2 of Geoff's features chores (#22 exchange rates,
+    #38 structured JSON logging). The remaining misses look like a gap between the written
+    definition and the labels, not something the agent can learn: by "visible to the end user",
+    email sync and webhooks read as features and JSON logging as a chore.
+  - **Decision (Geoff, 2026-09-23): accept and record.** Type stays failing at 82%; the 90% bar is
+    not lowered and the 40 labels are not changed to match the agent. The type label never gates
+    anything, so triage keeps running in shadow on `triage-v2`. This set is now spent for tuning:
+    no further prompt changes are graded against it.
+  - **TODO (`triage-v3`):** Geoff puts the rule he actually labels by into words (his notes point
+    at difficulty, and integrations counted as chores even when users see them). v3 is graded
+    only on a **new, blind-labelled holdout set** of about 15–20 issues, not on these 40, with the
+    same bars fixed beforehand.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
