@@ -38,6 +38,7 @@ from sdlc.tables import (
     CIRun,
     Deployment,
     Engineer,
+    Forecast,
     Incident,
     Issue,
     PullRequest,
@@ -497,6 +498,10 @@ def reset(db: Session) -> None:
     synthetic_rows = AgentDecision.subject_source == SOURCE
     db.execute(update(AgentDecision).where(synthetic_rows).values(supersedes_id=None))
     db.execute(delete(AgentDecision).where(synthetic_rows))
+    # Saved forecasts describe the history being replaced (and epics mix in real stories, so
+    # their rows aren't all "synthetic"): forget them all, with the forecaster's audit rows.
+    db.execute(delete(AgentDecision).where(AgentDecision.agent == "forecaster"))
+    db.execute(delete(Forecast))
     db.execute(update(Issue).where(Issue.source == SOURCE).values(sprint_id=None))
     for model in (Incident, CIRun, Deployment, PullRequest, Issue, Sprint, Engineer):
         db.execute(delete(model).where(model.source == SOURCE))

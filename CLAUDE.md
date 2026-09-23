@@ -332,3 +332,12 @@ Geoff:
   At-risk items come from module days-per-point, each with a plain-English reason.
 - The synthetic history's current sprint was anchored two weeks back on odd ISO weeks (no sprint
   in progress); fixed, with a test for both parities.
+- **The forecaster agent** (`sdlc/forecaster.py`) runs in the shared poll loop. It re-forecasts
+  the current sprint or an epic only when its inputs fingerprint changes (a new day, a story
+  added/closed/re-estimated, work starting), saving one `sdlc_forecasts` row (migration
+  `0007_forecasts`, append-only) and one audit row (`subject_type` sprint/epic, `subject_id` =
+  the forecast row) each. Triggers: `schedule` (first of the day), `change`, `manual`
+  (`python -m sdlc.forecaster now`). No Claude calls and no GitHub writes, so it costs nothing;
+  `ORCHESTRATOR_MODE=off` stops it. `synth --reset` forgets all saved forecasts.
+  `forecaster.moved()` gives the latest forecast and how many days P50/P85 moved, for the
+  dashboard. `trigger` is a MySQL reserved word: quote it in hand-written SQL.

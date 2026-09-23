@@ -1,13 +1,14 @@
-"""Poll GitHub and run both agents. (The demo is local-only, so it polls; no webhooks.)
+"""Poll GitHub and run the agents. (The demo is local-only, so it polls; no webhooks.)
 
-`run` and `once` drive the PR risk agent (this module) and the triage agent
-(sdlc/issue_runner.py) together, one poll cycle each, in one process — one container for the
-whole orchestrator, per the blueprint's shared ORCHESTRATOR_MODE kill switch. The two agents
-are otherwise independent: see sdlc/issue_runner.py for triage's own trigger and autonomy rules.
+`run` and `once` drive the PR risk agent (this module), the triage agent
+(sdlc/issue_runner.py) and the forecaster (sdlc/forecaster.py) together, one poll cycle each,
+in one process — one container for the whole orchestrator, per the blueprint's shared
+ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
+sdlc/issue_runner.py and sdlc/forecaster.py for their own triggers and autonomy rules.
 
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.runner run            # poll both agents forever, every POLL_SECONDS
-    python -m sdlc.runner once           # one poll of both agents, then exit
+    python -m sdlc.runner run            # poll all three agents forever, every POLL_SECONDS
+    python -m sdlc.runner once           # one poll of all three agents, then exit
     python -m sdlc.runner dry-run 7      # show the exact PR risk request for PR #7; calls nothing
     python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes nothing
 For the triage agent's own dry-run/try commands, use `python -m sdlc.issue_runner`.
@@ -49,6 +50,7 @@ from sdlc.audit import decisions_for, record_decision
 from sdlc.calibration import facts_of
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
+from sdlc.forecaster import ForecastRunner
 from sdlc.github_client import GitHubClient, GitHubError
 from sdlc.issue_runner import IssueRunner
 from sdlc.scoring import compute_features, features_digest, score_features
@@ -282,21 +284,29 @@ def main(argv: list[str] | None = None) -> None:
         gh = GitHubClient()
         runner = Runner(gh, StructuredLLM(), load_policy(), runner_mode)
         triage_runner = IssueRunner(gh, StructuredLLM(model=settings.triage_model), runner_mode)
+        forecaster = ForecastRunner(runner_mode)
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
     if args.command in ("dry-run", "try"):
         _look(runner, args)
     elif args.command == "once":
-        print({"pr_risk": runner.poll_once(), "triage": triage_runner.poll_once()})
+        print(
+            {
+                "pr_risk": runner.poll_once(),
+                "triage": triage_runner.poll_once(),
+                "forecaster": forecaster.poll_once(),
+            }
+        )
     else:
         log.info(
-            "risk and triage agents started in %s mode, polling every %ss",
+            "risk, triage and forecaster agents started in %s mode, polling every %ss",
             runner_mode,
             settings.poll_seconds,
         )
         while True:
-            for name, agent in (("pr_risk", runner), ("triage", triage_runner)):
+            agents = (("pr_risk", runner), ("triage", triage_runner), ("forecaster", forecaster))
+            for name, agent in agents:
                 try:
                     summary = agent.poll_once()
                     if summary.get("assessed") or summary.get("errors"):
