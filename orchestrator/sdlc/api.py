@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from sdlc import audit, metrics
+from sdlc import audit, forecaster, metrics
 from sdlc import board as board_module
 from sdlc.config import get_settings
 from sdlc.db import get_db
@@ -96,12 +96,18 @@ def board(
     )
 
 
+@app.get("/api/v1/signals/forecast")
+def forecast(db: DB) -> dict:
+    """The forecaster agent's latest saved sprint and epic forecasts, and how their dates moved."""
+    return forecaster.dashboard(db)
+
+
 @app.get("/api/v1/signals/decisions")
 def decisions(
     db: DB,
     agent: str | None = None,
-    subject_type: Literal["pr", "issue"] | None = None,
-    subject_source: Literal["synthetic", "github"] | None = None,
+    subject_type: Literal["pr", "issue", "sprint", "epic"] | None = None,
+    subject_source: Literal["synthetic", "github", "mixed"] | None = None,
     status: Literal["ok", "error"] | None = None,
     tier: str | None = None,
     limit: int = Query(50, ge=1, le=200),

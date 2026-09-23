@@ -91,6 +91,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'All agents', value: '' },
             { title: 'PR risk', value: 'pr_risk' },
             { title: 'Triage', value: 'triage' },
+            { title: 'Forecaster', value: 'forecaster' },
           ]"
           label="Agent"
           density="compact"
@@ -102,9 +103,11 @@ onBeforeUnmount(() => clearInterval(pollTimer))
         <v-select
           v-model="filters.subject_type"
           :items="[
-            { title: 'PRs and issues', value: '' },
+            { title: 'All subjects', value: '' },
             { title: 'Pull requests', value: 'pr' },
             { title: 'Issues', value: 'issue' },
+            { title: 'Sprints', value: 'sprint' },
+            { title: 'Epics', value: 'epic' },
           ]"
           label="Subject"
           density="compact"

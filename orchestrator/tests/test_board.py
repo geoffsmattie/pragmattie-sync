@@ -357,18 +357,18 @@ def test_sprint_filter_never_excludes_real_cards(db):
     synthetic_issue = make_issue(
         db, source="synthetic", module="leads", points=3, sprint_id=sprint.id
     )
-    other_sprint_issue = make_issue(
+    epic_backlog_issue = make_issue(
         db, source="synthetic", module="leads", points=3
-    )  # sprint=None too
+    )  # unscheduled simulated story: in no sprint
     db.commit()
 
     board = build_board(db, now=NOW, sprint="current")
     keys = {c.key for c in board.cards}
     assert f"issue-{real_issue.number}" in keys
     assert f"issue-{synthetic_issue.number}" in keys
-    assert (
-        f"issue-{other_sprint_issue.number}" in keys
-    )  # its own sprint is None -> not excluded either
+    assert f"issue-{epic_backlog_issue.number}" not in keys  # only under "all"
+    everything = {c.key for c in build_board(db, now=NOW, sprint="all").cards}
+    assert f"issue-{epic_backlog_issue.number}" in everything
 
     named = build_board(db, now=NOW, sprint="Sprint 2")  # a sprint that isn't this one
     keys2 = {c.key for c in named.cards}

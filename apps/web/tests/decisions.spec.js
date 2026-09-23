@@ -9,6 +9,14 @@ describe('subjectLabel', () => {
   it('labels a PR subject', () => {
     expect(subjectLabel({ subject_type: 'pr', subject_id: 45 })).toBe('PR #45')
   })
+
+  it('labels a forecast by the sprint or epic it forecasts', () => {
+    const sprint = { subject_type: 'sprint', subject_id: 3, output: { subject: 'Sprint 13' } }
+    expect(subjectLabel(sprint)).toBe('Sprint: Sprint 13')
+    const epic = { subject_type: 'epic', subject_id: 4, output: { subject: 'Salesforce import' } }
+    expect(subjectLabel(epic)).toBe('Epic: Salesforce import')
+    expect(subjectLabel({ subject_type: 'epic', subject_id: 9 })).toBe('Epic: forecast #9')
+  })
 })
 
 describe('statusColor', () => {

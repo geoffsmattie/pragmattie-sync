@@ -9,6 +9,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -76,6 +77,9 @@ class Issue(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     sprint_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_sprints.id"))
     assignee_id: Mapped[int | None] = mapped_column(ForeignKey("sdlc_engineers.id"))
+    # The epic this story belongs to, by name (an `epic:<name>` label on a real issue). Epics
+    # are forecast on their own, so a story added to one live moves that epic's date.
+    epic: Mapped[str | None] = mapped_column(String(80), index=True)
 
     assignee: Mapped[Engineer | None] = relationship()
 
@@ -250,3 +254,34 @@ class GateStatus(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
     pull_request: Mapped[PullRequest] = relationship()
+
+
+class Forecast(Base):
+    """One saved forecast of a sprint or an epic (see sdlc/forecast.py and sdlc/forecaster.py).
+
+    Append-only history: the forecaster saves a new row once a day and whenever the forecast's
+    inputs change, so the dashboard can show how a date moved and, later, forecast vs actual.
+    """
+
+    __tablename__ = "sdlc_forecasts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    as_of: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(10))  # sprint | epic
+    subject: Mapped[str] = mapped_column(String(80), index=True)  # sprint or epic name
+    source: Mapped[str] = mapped_column(String(20))  # synthetic | github | mixed
+    trigger: Mapped[str] = mapped_column(String(20))  # schedule | change | manual
+    inputs_hash: Mapped[str] = mapped_column(String(64))  # what it was computed from
+    remaining_items: Mapped[int] = mapped_column(Integer)
+    remaining_real: Mapped[int] = mapped_column(Integer, default=0)
+    remaining_points: Mapped[int] = mapped_column(Integer)
+    end_date: Mapped[date | None] = mapped_column(Date)  # a sprint's last day; None for epics
+    p50: Mapped[date | None] = mapped_column(Date)  # None: not in sight
+    p85: Mapped[date | None] = mapped_column(Date)
+    on_time_probability: Mapped[float | None] = mapped_column(Float)  # sprints only
+    throughput_mean: Mapped[float] = mapped_column(Float)
+    history_days: Mapped[int] = mapped_column(Integer)
+    runs: Mapped[int] = mapped_column(Integer)
+    seed: Mapped[int] = mapped_column(BigInteger)  # a crc32: past a signed INT
+    at_risk: Mapped[list | None] = mapped_column(JSON)  # items flagged, with reasons

@@ -10,6 +10,7 @@ Label conventions (created by `python -m sdlc.backlog`):
     type:<kind>      feature, bug, chore
     priority:<p>     p1, p2, p3
     points:<n>       story-point estimate
+    epic:<name>      the epic a story belongs to (e.g. epic:AI lead scoring)
     caused-incident  set on a PR after it caused a production incident
 """
 
@@ -97,6 +98,7 @@ class Collector:
                 module=labels.get("module"),
                 type=labels.get("type", "feature"),
                 priority=labels.get("priority"),
+                epic=labels.get("epic"),
                 estimate_points=int(points) if points and points.isdigit() else None,
                 state=item["state"],
                 created_at=created,

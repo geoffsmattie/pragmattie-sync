@@ -211,12 +211,15 @@ def build_board(
         if card:
             cards.append(card)
 
-    # A card with no sprint (every real card, since nothing assigns one) is never excluded by a
+    # A real card (which never has a sprint, since nothing assigns one) is never excluded by a
     # sprint filter — real, live-demo work should always be visible regardless of which sprint
-    # is selected. Only synthetic cards, which do carry a sprint, are actually filtered.
+    # is selected. Synthetic cards are filtered by their sprint; unscheduled synthetic stories
+    # (an epic's remaining backlog) belong to no sprint, so they show only under "all".
     if sprint and sprint != "all":
         target = current_sprint.name if sprint == "current" and current_sprint else sprint
-        cards = [c for c in cards if c.sprint is None or c.sprint == target]
+        cards = [
+            c for c in cards if c.sprint == target or (c.sprint is None and c.source != "synthetic")
+        ]
     if module:
         cards = [c for c in cards if c.module == module]
     if owner:

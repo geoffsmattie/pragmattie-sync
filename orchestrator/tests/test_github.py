@@ -24,7 +24,12 @@ ROUTES = {
             "state": "closed",
             "created_at": T0,
             "closed_at": "2026-09-03T10:00:00Z",
-            "labels": [label("module:pipeline"), label("type:feature"), label("points:5")],
+            "labels": [
+                label("module:pipeline"),
+                label("type:feature"),
+                label("points:5"),
+                label("epic:AI lead scoring"),
+            ],
             "assignee": {"login": "geoff"},
         },
         {"number": 2, "title": "a PR, not an issue", "pull_request": {}, "labels": []},
@@ -112,6 +117,7 @@ def test_collects_issues_prs_and_ci_jobs(db, client):
 
     issue = db.scalar(select(Issue).where(Issue.source == "github"))
     assert (issue.module, issue.estimate_points, issue.actual_days) == ("pipeline", 5, 2.0)
+    assert issue.epic == "AI lead scoring"  # a story under its epic
 
     pr = db.scalar(select(PullRequest).where(PullRequest.source == "github"))
     assert pr.state == "merged"
