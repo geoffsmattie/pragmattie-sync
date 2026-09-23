@@ -1,14 +1,14 @@
 """Poll GitHub and run the agents. (The demo is local-only, so it polls; no webhooks.)
 
 `run` and `once` drive the PR risk agent (this module), the triage agent
-(sdlc/issue_runner.py) and the forecaster (sdlc/forecaster.py) together, one poll cycle each,
-in one process — one container for the whole orchestrator, per the blueprint's shared
-ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
-sdlc/issue_runner.py and sdlc/forecaster.py for their own triggers and autonomy rules.
+(sdlc/issue_runner.py), the forecaster (sdlc/forecaster.py) and the planner (sdlc/plan_runner.py)
+together, one poll cycle each, in one process — one container for the whole orchestrator, per
+the blueprint's shared ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
+each one's module for its own triggers and autonomy rules.
 
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.runner run            # poll all three agents forever, every POLL_SECONDS
-    python -m sdlc.runner once           # one poll of all three agents, then exit
+    python -m sdlc.runner run            # poll every agent forever, every POLL_SECONDS
+    python -m sdlc.runner once           # one poll of every agent, then exit
     python -m sdlc.runner dry-run 7      # show the exact PR risk request for PR #7; calls nothing
     python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes nothing
 For the triage agent's own dry-run/try commands, use `python -m sdlc.issue_runner`.
@@ -53,6 +53,7 @@ from sdlc.db import SessionLocal
 from sdlc.forecaster import ForecastRunner
 from sdlc.github_client import GitHubClient, GitHubError
 from sdlc.issue_runner import IssueRunner
+from sdlc.plan_runner import PlannerRunner
 from sdlc.scoring import compute_features, features_digest, score_features
 from sdlc.signals.github import Collector
 from sdlc.tables import Approval, PullRequest
@@ -285,6 +286,12 @@ def main(argv: list[str] | None = None) -> None:
         runner = Runner(gh, StructuredLLM(), load_policy(), runner_mode)
         triage_runner = IssueRunner(gh, StructuredLLM(model=settings.triage_model), runner_mode)
         forecaster = ForecastRunner(runner_mode)
+        planner = PlannerRunner(
+            StructuredLLM(
+                model=settings.planner_model, max_tokens=settings.planner_max_output_tokens
+            ),
+            runner_mode,
+        )
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
@@ -296,16 +303,22 @@ def main(argv: list[str] | None = None) -> None:
                 "pr_risk": runner.poll_once(),
                 "triage": triage_runner.poll_once(),
                 "forecaster": forecaster.poll_once(),
+                "planner": planner.poll_once(),
             }
         )
     else:
         log.info(
-            "risk, triage and forecaster agents started in %s mode, polling every %ss",
+            "risk, triage, forecaster and planner agents started in %s mode, polling every %ss",
             runner_mode,
             settings.poll_seconds,
         )
         while True:
-            agents = (("pr_risk", runner), ("triage", triage_runner), ("forecaster", forecaster))
+            agents = (
+                ("pr_risk", runner),
+                ("triage", triage_runner),
+                ("forecaster", forecaster),  # before the planner: it reads the saved forecast
+                ("planner", planner),
+            )
             for name, agent in agents:
                 try:
                     summary = agent.poll_once()

@@ -347,3 +347,15 @@ Geoff:
   on-time chance, pace, at-risk items with reasons; each epic's dates, how far P50 moved and from
   what, and a trail of past forecasts; a flash when a subject gets a new forecast. `/forecast` is
   the CRM's sales forecast, a different thing.
+- **The planner agent** (`sdlc/agents/planner.py`, runner `sdlc/plan_runner.py`, Sonnet 5 via
+  `PLANNER_MODEL`, medium effort): runs after the forecaster in the poll loop when the sprint
+  **slips** (its saved P85 is past its last day, i.e. on-time chance under 85%). It drafts up to
+  three options (defer / reassign / split) once per slipping forecast; failures retry up to 3
+  times, 5 minutes apart; at most 4 calls per sprint per day. Code drops any item or person the
+  model names that it wasn't shown, clamps confidence, and **measures each defer option by
+  re-running the same seeded simulation** without those items, so every date and percentage on the
+  page comes from the forecast, never the model. Reassign/split effects are shown as not
+  measurable. Proposes only: the draft is an audit row (`subject_type` sprint, `subject_id` = the
+  forecast), shown on `/delivery` (marked out of date once the forecast moves on). `python -m
+  sdlc.plan_runner dry-run` shows the request and a cost ceiling (about $0.03); `try --yes` makes
+  one real call and writes nothing; `synth --reset` clears planner rows with the forecasts.

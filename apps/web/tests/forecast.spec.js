@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   changedSubjects,
   dayLabel,
+  effectLabel,
   mixLabel,
   onTimeTone,
   perWeek,
@@ -86,5 +87,19 @@ describe('changedSubjects', () => {
     }
     expect([...changedSubjects(before, after)]).toEqual(['A'])
     expect(changedSubjects(null, after).size).toBe(0)
+  })
+})
+
+describe('effectLabel', () => {
+  it('shows what code measured, and nothing for unmeasurable options', () => {
+    const effect = {
+      on_time_probability: 0.71,
+      p85: '2026-09-25',
+      from: { on_time_probability: 0.224, p85: '2026-09-29' },
+    }
+    const label = effectLabel(effect)
+    expect(label.startsWith('On-time 22% → 71% · P85 ')).toBe(true)
+    expect(effectLabel({ ...effect, p85: '2026-09-29' })).toBe('On-time 22% → 71%')
+    expect(effectLabel(null)).toBeNull()
   })
 })

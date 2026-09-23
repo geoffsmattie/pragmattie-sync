@@ -499,8 +499,9 @@ def reset(db: Session) -> None:
     db.execute(update(AgentDecision).where(synthetic_rows).values(supersedes_id=None))
     db.execute(delete(AgentDecision).where(synthetic_rows))
     # Saved forecasts describe the history being replaced (and epics mix in real stories, so
-    # their rows aren't all "synthetic"): forget them all, with the forecaster's audit rows.
-    db.execute(delete(AgentDecision).where(AgentDecision.agent == "forecaster"))
+    # their rows aren't all "synthetic"): forget them all, with the audit rows of the agents
+    # whose subjects they are (the forecaster's, and the planner's proposals about them).
+    db.execute(delete(AgentDecision).where(AgentDecision.agent.in_(["forecaster", "planner"])))
     db.execute(delete(Forecast))
     db.execute(update(Issue).where(Issue.source == SOURCE).values(sprint_id=None))
     for model in (Incident, CIRun, Deployment, PullRequest, Issue, Sprint, Engineer):
