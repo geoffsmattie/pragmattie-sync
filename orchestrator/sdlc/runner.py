@@ -10,7 +10,8 @@ Usage (inside the orchestrator container, or locally with the same .env):
     python -m sdlc.runner run            # poll every agent forever, every POLL_SECONDS
     python -m sdlc.runner once           # one poll of every agent, then exit
     python -m sdlc.runner dry-run 7      # show the exact PR risk request for PR #7; calls nothing
-    python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes nothing
+    python -m sdlc.runner try 7 --yes    # call Claude for PR #7; prints the answer, writes only
+                                         # a "trial" audit row (its tokens), never to GitHub
 For the triage agent's own dry-run/try commands, use `python -m sdlc.issue_runner`.
 
 ORCHESTRATOR_MODE decides what a poll may do, for both agents:
@@ -46,7 +47,7 @@ from sdlc.agents.pr_risk import (
     build_prompt,
 )
 from sdlc.approver import ApproverError, load_approvers, request_approval, resolve_approver
-from sdlc.audit import decisions_for, record_decision
+from sdlc.audit import TRIAL, decisions_for, record_decision
 from sdlc.calibration import facts_of
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
@@ -356,6 +357,8 @@ def _look(runner: Runner, args) -> None:
             diff=diff,
             diff_char_limit=runner.diff_char_limit,
         )
+        _record_trial(db, args.number, runner.llm.model, result)
+        db.commit()
     print(
         f"Status: {result.status}. Score {result.final_score}/100 (rubric {result.raw_score}, "
         f"adjustment {result.adjustment}) -> tier {result.assignment.tier}"
@@ -370,7 +373,30 @@ def _look(runner: Runner, args) -> None:
         )
     if result.error:
         print(f"Problem: {result.error}")
-    print("Nothing was written to GitHub or the audit table.")
+    print("Nothing was written to GitHub. The call was recorded as a trial audit row.")
+
+
+def _record_trial(db, number: int, model_id: str, result: Assessment) -> None:
+    """One "trial" audit row for a `try`, so its tokens count toward cost. See sdlc/audit.py."""
+    record_decision(
+        db,
+        agent=AGENT,
+        agent_version=AGENT_VERSION,
+        subject_type="pr",
+        subject_source="github",
+        subject_id=number,
+        trigger=TRIAL,
+        model_id=model_id,
+        prompt_version=PROMPT_VERSION,
+        prompt_hash=PROMPT_HASH,
+        output=_output_of(result),
+        action_taken={"trial": True},
+        status=result.status,
+        error=result.error,
+        latency_ms=result.llm.latency_ms if result.llm else None,
+        input_tokens=result.llm.input_tokens if result.llm else None,
+        output_tokens=result.llm.output_tokens if result.llm else None,
+    )
 
 
 if __name__ == "__main__":

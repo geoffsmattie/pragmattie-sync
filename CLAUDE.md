@@ -218,8 +218,10 @@ Open items:
     sign-off boxes), `github_effects.py` (the only writes: one comment, one `tier:` label, the
     status), and `sdlc/runner.py` (the poll loop, now shared with triage — see below).
   - `ORCHESTRATOR_MODE` ships as `off`, which does nothing at all; `dry-run <pr>` shows the exact
-    request and a cost ceiling and calls nothing; `try <pr>` needs `--yes` to spend money and
-    writes nothing. Start polling with `docker compose --profile agents up -d`.
+    request and a cost ceiling and calls nothing; `try <pr>` needs `--yes` to spend money, never
+    writes to GitHub, and records one `trigger = trial` audit row so its tokens count in cost
+    reports (added 2026-09-23). The poll loops and the delivery board ignore trial rows; the
+    decision log shows them. Start polling with `docker compose --profile agents up -d`.
   - A new commit is assessed once and its sign-off boxes start empty. A failed run fails closed to
     the floor tier or T2 and is retried up to three times, five minutes apart.
   - The agent never merges, approves, closes or pushes, and the model can't name a tier.
@@ -361,4 +363,4 @@ Geoff:
   measurable. Proposes only: the draft is an audit row (`subject_type` sprint, `subject_id` = the
   forecast), shown on `/delivery` (marked out of date once the forecast moves on). `python -m
   sdlc.plan_runner dry-run` shows the request and a cost ceiling (about $0.03); `try --yes` makes
-  one real call and writes nothing; `synth --reset` clears planner rows with the forecasts.
+  one real call and records only a `trial` audit row; `synth --reset` clears planner rows with the forecasts.

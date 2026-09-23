@@ -10,7 +10,8 @@ Writes only the audit table (the proposal is its `output`); never GitHub, never 
 
 Usage (inside the orchestrator container, or locally with the same .env):
     python -m sdlc.plan_runner dry-run        # the exact request for today's sprint; calls nothing
-    python -m sdlc.plan_runner try --yes      # one real call; prints the proposal, writes nothing
+    python -m sdlc.plan_runner try --yes      # one real call; prints the proposal and records
+                                              # only a "trial" audit row (its tokens)
     python -m sdlc.plan_runner once           # what the poll loop does, once
 """
 
@@ -36,7 +37,7 @@ from sdlc.agents.planner import (
     sprint_items,
     team,
 )
-from sdlc.audit import decisions_for, record_decision
+from sdlc.audit import TRIAL, decisions_for, record_decision
 from sdlc.db import SessionLocal
 from sdlc.forecast import current_sprint, sprint_forecast
 from sdlc.forecaster import SOURCE, latest
@@ -157,6 +158,7 @@ class PlannerRunner:
             .select_from(AgentDecision)
             .where(
                 AgentDecision.agent == AGENT,
+                AgentDecision.trigger != TRIAL,  # manual tries don't use up the loop's calls
                 AgentDecision.created_at >= start,
                 AgentDecision.subject_id.in_(forecast_ids),
             )
@@ -164,13 +166,17 @@ class PlannerRunner:
 
 
 def latest_proposal(db: Session, sprint_name: str) -> AgentDecision | None:
-    """The newest planner decision about this sprint, successful or not."""
+    """The newest planner decision about this sprint, successful or not (manual trials aside)."""
     forecast_ids = select(Forecast.id).where(
         Forecast.kind == "sprint", Forecast.subject == sprint_name
     )
     return db.scalar(
         select(AgentDecision)
-        .where(AgentDecision.agent == AGENT, AgentDecision.subject_id.in_(forecast_ids))
+        .where(
+            AgentDecision.agent == AGENT,
+            AgentDecision.trigger != TRIAL,
+            AgentDecision.subject_id.in_(forecast_ids),
+        )
         .order_by(AgentDecision.created_at.desc(), AgentDecision.id.desc())
         .limit(1)
     )
@@ -215,6 +221,27 @@ def main(argv: list[str] | None = None) -> None:
             print("Not sent. Add --yes to make the real API call.")
             return
         p = propose(db, sprint, forecast, llm=llm, source=SOURCE)
+        saved = latest(db, "sprint", sprint.name)
+        record_decision(
+            db,
+            agent=AGENT,
+            agent_version=AGENT_VERSION,
+            subject_type="sprint",
+            subject_source=SOURCE,
+            subject_id=saved.id if saved else 0,
+            trigger=TRIAL,
+            model_id=llm.model,
+            prompt_version=PROMPT_VERSION,
+            prompt_hash=PROMPT_HASH,
+            output={"sprint": sprint.name, "summary": p.summary, "options": list(p.options)},
+            action_taken={"trial": True},
+            status=p.status,
+            error=p.error,
+            latency_ms=p.llm.latency_ms if p.llm else None,
+            input_tokens=p.llm.input_tokens if p.llm else None,
+            output_tokens=p.llm.output_tokens if p.llm else None,
+        )
+        db.commit()
     print(f"\nStatus: {p.status}." + (f" {p.error}" if p.error else ""))
     if p.ok:
         print(f"{p.summary}\nConfidence {p.confidence:.0%}.")
@@ -233,7 +260,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"   dropped: {note}")
     if p.llm:
         print(f"Tokens: {p.llm.input_tokens} in, {p.llm.output_tokens} out; {p.llm.latency_ms} ms")
-    print("Nothing was written to the audit table or anywhere else.")
+    print("Nothing was written to GitHub. The call was recorded as a trial audit row.")
 
 
 if __name__ == "__main__":

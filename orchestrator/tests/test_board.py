@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sdlc.agents.gate import Gate
 from sdlc.agents.pr_risk import AGENT as PR_RISK_AGENT
 from sdlc.agents.triage import AGENT as TRIAGE_AGENT
-from sdlc.audit import record_decision
+from sdlc.audit import TRIAL, record_decision
 from sdlc.board import build_board
 from sdlc.gate_status import upsert as upsert_gate
 from sdlc.tables import Deployment, Engineer, Issue, PullRequest, Sprint
@@ -129,6 +129,26 @@ def test_triaged_real_issue_needs_a_real_triage_decision(db):
     card = by_key(build_board(db, now=NOW), f"issue-{issue.number}")
     assert card.column == "triaged"
     assert card.entered_column_at == decision.created_at
+
+
+def test_a_manual_trial_run_is_not_one_of_the_cards_decisions(db):
+    issue = make_issue(db, module="leads", points=3)
+    record_decision(
+        db,
+        agent=TRIAGE_AGENT,
+        agent_version="v1",
+        subject_type="issue",
+        subject_source=issue.source,
+        subject_id=issue.number,
+        trigger=TRIAL,
+        now=NOW,
+        output={"module": "leads"},
+        status="ok",
+    )
+    db.commit()
+    card = by_key(build_board(db, now=NOW), f"issue-{issue.number}")
+    assert card.decisions == ()  # not in the detail drawer
+    assert card.entered_column_at == issue.created_at  # and not timing the transition
 
 
 def test_synthetic_issue_is_triaged_from_birth_no_decision_needed(db):

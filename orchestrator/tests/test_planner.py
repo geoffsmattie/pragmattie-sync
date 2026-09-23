@@ -218,3 +218,33 @@ def test_a_reassign_can_go_to_someone_with_nothing_in_the_sprint_yet(db, history
     assert "Aisha B. (QA / SDET)" in llm.calls[0]["messages"][0]["content"]  # the whole team
     reassign = planner_rows(db)[0].output["options"][1]
     assert reassign["reassign_to"] == "Aisha B."
+
+
+def test_a_manual_trial_is_counted_for_cost_but_is_not_the_draft_and_uses_no_daily_call(
+    db, history
+):
+    from sdlc.audit import record_decision
+
+    overload_sprint(db)
+    forecast_now()
+    saved = dashboard(db)["sprint"]
+    for n in range(MAX_PER_DAY):
+        record_decision(
+            db,
+            agent="planner",
+            agent_version="v1",
+            subject_type="sprint",
+            subject_source="synthetic",
+            subject_id=saved["id"],
+            trigger="trial",
+            now=NOW,
+            head_sha=None,
+            output={"summary": f"trial {n}"},
+            status="ok",
+            input_tokens=700,
+        )
+    db.commit()
+    assert dashboard(db)["sprint"]["proposal"] is None  # a trial is not the page's draft
+    agent, llm = runner(response(plan(shown_numbers(db))))
+    assert agent.poll_once(NOW)["state"] == "proposed"  # and doesn't use up the daily cap
+    assert dashboard(db)["sprint"]["proposal"]["summary"] == "Too many chores for the days left."

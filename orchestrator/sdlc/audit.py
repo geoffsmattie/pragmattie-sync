@@ -7,6 +7,11 @@ row in the same transaction as the action it records, so a decision and its effe
 holds a content-hash version of the issue's title and body instead (see
 sdlc/agents/triage_comment.py's `content_version`) — same column, same "which version of the
 subject was this decision made about" purpose.
+
+A manual `try` (sdlc/runner.py, sdlc/issue_runner.py) records a "trial" row too, so every paid API
+call shows up in the token totals. A trial row has no `head_sha`, and every reader that decides
+what the agents do next (`decisions_for`, `latest_decision`, the delivery board) skips it: trying
+a PR or issue never stands in for, or blocks, the real assessment.
 """
 
 from datetime import datetime
@@ -15,6 +20,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from sdlc.tables import AgentDecision
+
+TRIAL = "trial"  # the `trigger` of a manual `try` run: counted for cost, ignored for decisions
 
 
 def record_decision(
@@ -64,6 +71,7 @@ def decisions_for(
                 AgentDecision.subject_source == subject_source,
                 AgentDecision.subject_id == subject_id,
                 AgentDecision.head_sha == head_sha,
+                AgentDecision.trigger != TRIAL,
             )
             .order_by(AgentDecision.attempt)
         )
@@ -82,6 +90,7 @@ def latest_decision(
             AgentDecision.subject_source == subject_source,
             AgentDecision.subject_id == subject_id,
             AgentDecision.status == "ok",
+            AgentDecision.trigger != TRIAL,
         )
         .order_by(AgentDecision.created_at.desc())
         .limit(1)

@@ -226,11 +226,24 @@ def test_try_does_not_call_the_api_without_yes(db, capsys):
     assert llm.calls == []
 
 
-def test_try_with_yes_calls_once_and_writes_nothing_anywhere(db, capsys):
+def test_try_with_yes_calls_once_and_records_only_a_trial_row(db, capsys):
     runner, gh, llm = setup("shadow", adjustment=6)
     look(runner, "try", yes=True)
     out = capsys.readouterr().out
     assert len(llm.calls) == 1
     assert "Status: ok" in out and "adjustment 6" in out and "Tokens: 1200 in, 150 out" in out
-    assert "Nothing was written to GitHub or the audit table." in out
-    assert gh.writes == [] and decisions(db) == []
+    assert "recorded as a trial audit row" in out
+    assert gh.writes == []
+    (row,) = decisions(db)
+    assert (row.trigger, row.status, row.subject_id, row.head_sha) == ("trial", "ok", 7, None)
+    assert (row.input_tokens, row.output_tokens, row.model_id) == (1200, 150, "claude-sonnet-5")
+    assert row.tier is None and row.final_score is None  # counted for cost, not as a decision
+
+
+def test_a_trial_run_never_stands_in_for_the_real_assessment(db, capsys):
+    runner, gh, llm = setup("shadow", response(answer()), response(answer()))
+    look(runner, "try", yes=True)
+    summary = runner.poll_once(NOW)
+    assert summary["assessed"] == 1 and len(llm.calls) == 2
+    assert [d.trigger for d in decisions(db)] == ["trial", "poll"]
+    assert gh.labels[7] == {"tier:T0"}

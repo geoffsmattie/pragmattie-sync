@@ -3,7 +3,8 @@
 Usage (inside the orchestrator container, or locally with the same .env):
     python -m sdlc.issue_runner once            # one poll, then exit
     python -m sdlc.issue_runner dry-run 12      # exact request for issue #12; calls nothing
-    python -m sdlc.issue_runner try 12 --yes    # one real call; prints the answer, writes nothing
+    python -m sdlc.issue_runner try 12 --yes    # one real call; prints the answer, writes only a
+                                                # "trial" audit row (its tokens), never to GitHub
 
 Normally this runs inside `python -m sdlc.runner run`'s poll loop, alongside the PR risk agent, so
 one container drives both agents on one schedule. This module's own `run`/`once` exist so triage
@@ -39,7 +40,7 @@ from sdlc.agents.triage import (
     build_prompt,
 )
 from sdlc.agents.triage_comment import MARKER, Meta, content_version, render
-from sdlc.audit import decisions_for, latest_decision, record_decision
+from sdlc.audit import TRIAL, decisions_for, latest_decision, record_decision
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError
@@ -291,6 +292,8 @@ def _look(runner: IssueRunner, args, settings) -> None:
             labels=labels,
             number=args.number,
         )
+        _record_trial(db, args.number, runner.llm.model, result)
+        db.commit()
     print(f"Status: {result.status}.")
     if result.ok:
         print(f"{result.module} / {result.type} ({result.priority}), {result.estimate_points}pt")
@@ -304,7 +307,29 @@ def _look(runner: IssueRunner, args, settings) -> None:
         print(f"Tokens: {u.input_tokens} in, {u.output_tokens} out; {u.latency_ms} ms")
     if result.error:
         print(f"Problem: {result.error}")
-    print("Nothing was written to GitHub or the audit table.")
+    print("Nothing was written to GitHub. The call was recorded as a trial audit row.")
+
+
+def _record_trial(db, number: int, model_id: str, result) -> None:
+    """One "trial" audit row for a `try`, so its tokens count toward cost. See sdlc/audit.py."""
+    record_decision(
+        db,
+        agent=AGENT,
+        agent_version=AGENT_VERSION,
+        subject_type="issue",
+        subject_source="github",
+        subject_id=number,
+        trigger=TRIAL,
+        model_id=model_id,
+        prompt_version=PROMPT_VERSION,
+        output=_output_of(result),
+        action_taken={"trial": True},
+        status=result.status,
+        error=result.error,
+        latency_ms=result.llm.latency_ms if result.llm else None,
+        input_tokens=result.llm.input_tokens if result.llm else None,
+        output_tokens=result.llm.output_tokens if result.llm else None,
+    )
 
 
 if __name__ == "__main__":
