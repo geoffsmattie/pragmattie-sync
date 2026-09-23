@@ -35,9 +35,15 @@ class Effects:
     def read_diff(self, number: int) -> str:
         return self.gh.get_text(f"/repos/{{repo}}/pulls/{number}", "application/vnd.github.diff")
 
-    def find_comment(self, number: int, marker: str = MARKER) -> dict | None:
+    def read_comments(self, number: int) -> list[dict]:
+        """Every comment on this PR or issue, oldest first."""
+        return list(self.gh.paginate(f"/repos/{{repo}}/issues/{number}/comments"))
+
+    def find_comment(
+        self, number: int, marker: str = MARKER, comments: list[dict] | None = None
+    ) -> dict | None:
         """An agent's own comment on this PR or issue, found by its HTML marker."""
-        for comment in self.gh.paginate(f"/repos/{{repo}}/issues/{number}/comments"):
+        for comment in comments if comments is not None else self.read_comments(number):
             if marker in (comment.get("body") or ""):
                 return comment
         return None

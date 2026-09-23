@@ -141,7 +141,16 @@ work always gets a person. **Status: designed, not yet built — implementation 
 | **T3: Critical** | Risk ≥ 80, or touches Billing/Auth, or schema migration | 2 humans incl. code owner | Full suite + manual QA | Human sign-off required |
 
 - **Overrides:** a human can raise any PR's tier at any time; lowering a tier requires a
-  written reason in the PR. Both go to the audit log.
+  written reason in the PR. Both go to the audit log. **Built (2026-09-23)** as a PR comment
+  command read by the PR risk agent's poll (`sdlc/agents/overrides.py`): `/tier T3` raises (reason
+  optional, and it **sticks** for the PR across later commits); `/tier T1 <reason>` lowers only
+  with a reason of at least 10 characters, and only for the **commit it was made on** (a new push
+  is new risk). **Nothing goes below a policy floor** (Billing/Auth, migrations,
+  pipeline/forecasting): floors change in `tiers.yaml`, not by comment. Every command, accepted or
+  rejected, is an audit row (`agent = tier_override`, `trigger = human`, `status` ok/rejected,
+  `human_override` = from/to/actor/reason/why); the agent's own decision row keeps its own tier.
+  The label, the gate, the simulated approver request and the comment's heading, override list
+  and "what this tier needs" boxes all follow the tier in force.
 - **Enforcement (planned):** the `main` ruleset will require a `risk-gate` status check.
   The PR risk agent sets it to pass only when the tier's approvals are present. Every agent
   decision is written to an audit table with its inputs, scores and the tier applied.

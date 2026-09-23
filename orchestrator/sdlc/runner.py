@@ -31,10 +31,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from sdlc import gate_status
-from sdlc.agents.comment import Meta, comment_head, read_ticks, refresh, render
+from sdlc.agents.comment import MARKER, Meta, comment_head, read_ticks, refresh, render, retier
 from sdlc.agents.gate import Approvals, evaluate
 from sdlc.agents.github_effects import Effects
 from sdlc.agents.llm import StructuredLLM
+from sdlc.agents.overrides import AGENT as OVERRIDE_AGENT
+from sdlc.agents.overrides import Ruling, effective_tier, parse_commands, rule
+from sdlc.agents.overrides import describe as describe_ruling
 from sdlc.agents.pr_risk import (
     AGENT,
     AGENT_VERSION,
@@ -46,6 +49,7 @@ from sdlc.agents.pr_risk import (
     assess,
     build_prompt,
 )
+from sdlc.agents.triage_comment import MARKER as TRIAGE_MARKER
 from sdlc.approver import ApproverError, load_approvers, request_approval, resolve_approver
 from sdlc.audit import TRIAL, decisions_for, record_decision
 from sdlc.calibration import facts_of
@@ -53,12 +57,13 @@ from sdlc.config import get_settings
 from sdlc.db import SessionLocal
 from sdlc.forecaster import ForecastRunner
 from sdlc.github_client import GitHubClient, GitHubError
+from sdlc.governance import matches
 from sdlc.issue_runner import IssueRunner
 from sdlc.plan_runner import PlannerRunner
 from sdlc.scoring import compute_features, features_digest, score_features
 from sdlc.signals.github import Collector
-from sdlc.tables import Approval, PullRequest
-from sdlc.tiers import Policy, load_policy
+from sdlc.tables import AgentDecision, Approval, PullRequest
+from sdlc.tiers import TIER_IDS, Policy, load_policy
 
 log = logging.getLogger("sdlc.runner")
 
@@ -77,6 +82,7 @@ class Runner:
         self.effects = Effects(gh, mode)
         self.diff_char_limit = get_settings().diff_char_limit
         self._last_status: dict[tuple[int, str], tuple[str, str]] = {}
+        self._last_label: dict[int, str] = {}  # PR -> tier label last written
 
     # --- one poll ----------------------------------------------------------------------------
 
@@ -109,12 +115,15 @@ class Runner:
                 head_sha=sha,
             )
             good = next((d for d in decisions if d.status == "ok"), None)
-            comment = self.effects.find_comment(number)
+            comments = self.effects.read_comments(number)
+            comment = self.effects.find_comment(number, comments=comments)
 
             if good is None and self._may_try(decisions, now):
                 self._assess_and_publish(db, pr, sha, len(decisions) + 1, comment, now, summary)
             elif decisions:
-                self._refresh_gate(db, pr, sha, good or decisions[-1], comment, now)
+                decision = good or decisions[-1]
+                self._rule_on_commands(db, pr, sha, decision.tier, comments, now)
+                self._refresh_gate(db, pr, sha, decision, comment, now)
             db.commit()
 
     def _may_try(self, decisions: list, now: datetime) -> bool:
@@ -140,7 +149,9 @@ class Runner:
         summary["assessed"] += 1
         summary["failed"] += 0 if assessment.ok else 1
 
-        tier = assessment.assignment.tier
+        agent_tier = assessment.assignment.tier
+        rulings = self._rulings(db, pr)
+        tier = effective_tier(agent_tier, self._floor(pr), rulings, sha)  # a raise sticks
         approver = self._request_simulated_approval(db, pr, tier)
         approvals = Approvals()  # a new commit starts with nothing signed off
         gate = evaluate(self.policy, tier, ok=assessment.ok, approvals=approvals, mode=self.mode)
@@ -164,7 +175,7 @@ class Runner:
             raw_score=assessment.raw_score,
             adjustment=assessment.adjustment,
             final_score=assessment.final_score,
-            tier=tier,
+            tier=agent_tier,  # the agent's own; a person's override is its own audit row
             signals=assessment.signals,
             output=_output_of(assessment),
             status=assessment.status,
@@ -174,14 +185,24 @@ class Runner:
             output_tokens=assessment.llm.output_tokens if assessment.llm else None,
         )
         meta = Meta(decision.id, self.mode, approver, sha)
-        body = render(assessment, gate, approvals, self.policy, meta)
+        body = render(
+            assessment,
+            gate,
+            approvals,
+            self.policy,
+            meta,
+            tier=tier,
+            override_lines=[describe_ruling(r) for r in rulings],
+        )
         decision.action_taken = {
             "comment": self.effects.upsert_comment(pr.number, body, comment),
             "label": self.effects.set_tier_label(pr.number, tier),
+            "tier_in_force": tier,
             "status": self.effects.set_status(sha, gate.state, gate.description),
             "mode": self.mode,
         }
         self._last_status[(pr.number, sha)] = (gate.state, gate.description)
+        self._last_label[pr.number] = tier
         gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
     def _request_simulated_approval(self, db, pr: PullRequest, tier: str) -> str:
@@ -194,10 +215,62 @@ class Runner:
         except ApproverError:
             return "Simulated second approver"  # already requested, or not needed
 
+    # --- people's tier overrides (see sdlc/agents/overrides.py) ------------------------------
+
+    def _floor(self, pr: PullRequest) -> str:
+        """The lowest tier the policy floors allow for this PR (T0 when none apply)."""
+        facts = facts_of(pr)
+        floors = [r.tier for r in self.policy.floors if matches(r, facts)]
+        return max(floors, key=TIER_IDS.index) if floors else TIER_IDS[0]
+
+    @staticmethod
+    def _rulings(db, pr: PullRequest) -> list[Ruling]:
+        rows = db.scalars(
+            select(AgentDecision)
+            .where(
+                AgentDecision.agent == OVERRIDE_AGENT,
+                AgentDecision.subject_type == "pr",
+                AgentDecision.subject_source == pr.source,
+                AgentDecision.subject_id == pr.number,
+            )
+            .order_by(AgentDecision.created_at, AgentDecision.id)
+        )
+        return [Ruling.from_record(r.human_override) for r in rows]
+
+    def _rule_on_commands(self, db, pr, sha, agent_tier, comments, now) -> None:
+        """Rule on each `/tier` command not seen before, in order, and record every ruling."""
+        rulings = self._rulings(db, pr)
+        seen = {r.comment_id for r in rulings}
+        floor = self._floor(pr)
+        for command in parse_commands(comments, (MARKER, TRIAGE_MARKER)):
+            if command.comment_id in seen:
+                continue
+            current = effective_tier(agent_tier, floor, rulings, sha)
+            ruling = rule(command, current=current, floor=floor, head_sha=sha)
+            record_decision(
+                db,
+                agent=OVERRIDE_AGENT,
+                agent_version="v1",
+                subject_type="pr",
+                subject_source=pr.source,
+                subject_id=pr.number,
+                trigger="human",
+                now=now,
+                head_sha=f"comment-{command.comment_id}"[:40],
+                tier=ruling.to_tier if ruling.accepted else None,
+                human_override=ruling.as_record(),
+                output={"comment_url": command.url, "floor": floor},
+                status="ok" if ruling.accepted else "rejected",
+            )
+            rulings.append(ruling)
+            seen.add(command.comment_id)
+
     # --- keep the check in step with what people do ------------------------------------------
 
     def _refresh_gate(self, db, pr, sha, decision, comment, now) -> None:
         ok = decision.status == "ok"
+        rulings = self._rulings(db, pr)
+        tier = effective_tier(decision.tier, self._floor(pr), rulings, sha)
         signoff, qa = read_ticks(comment["body"], sha) if comment else (False, False)
         simulated = bool(
             db.scalar(
@@ -207,17 +280,41 @@ class Runner:
             )
         )
         approvals = Approvals(signoff=signoff, qa_done=qa, simulated_approved=simulated)
-        gate = evaluate(self.policy, decision.tier, ok=ok, approvals=approvals, mode=self.mode)
-        gate_status.upsert(db, pr, gate, tier=decision.tier, mode=self.mode, now=now)
+        gate = evaluate(self.policy, tier, ok=ok, approvals=approvals, mode=self.mode)
+        gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
         key = (pr.number, sha)
         if self._last_status.get(key) != (gate.state, gate.description):
             self.effects.set_status(sha, gate.state, gate.description)
             self._last_status[key] = (gate.state, gate.description)
+        if tier != decision.tier or pr.number in self._last_label:
+            if self._last_label.get(pr.number) != tier:
+                if tier != decision.tier:
+                    self._request_simulated_approval(db, pr, tier)
+                self.effects.set_tier_label(pr.number, tier)
+                self._last_label[pr.number] = tier
         if comment and comment_head(comment["body"]) == sha:
             updated = refresh(comment["body"], gate, simulated)
+            lines = [describe_ruling(r) for r in rulings]
+            if lines or tier != decision.tier:
+                updated = retier(
+                    updated,
+                    self.policy,
+                    tier=tier,
+                    agent_tier=decision.tier,
+                    approvals=approvals,
+                    approver_name=self._approver_name(),
+                    override_lines=lines,
+                )
             if updated != comment["body"]:
                 self.effects.upsert_comment(pr.number, updated, comment)
+
+    @staticmethod
+    def _approver_name() -> str:
+        try:
+            return resolve_approver(load_approvers(), None)["name"]
+        except ApproverError:
+            return "Simulated second approver"
 
 
 def _output_of(a: Assessment) -> dict | None:
