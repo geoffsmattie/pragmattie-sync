@@ -9,9 +9,19 @@ Disagreements are read, not just counted: the report groups them into patterns (
 forecasting work repeatedly labelled "platform"), because a pattern is a prompt or
 module-description fix, never a reason to lower a bar.
 
+Blind re-runs. The agent's prompt shows an issue's existing labels, and the 40 backlog issues were
+created carrying Cowork's module/type/points labels, so the smoke-test decisions largely echo
+Cowork (they matched it on 39/40 modules and 40/40 types). A fair grade needs `--fresh`: it re-runs
+the agent on each issue's saved text (eval/_issues.json) with no labels shown and with similar
+past issues drawn from the simulated history only (so no other eval issue, with its Cowork labels,
+can appear as an example), records each call as a `trial` audit row (tokens counted, nothing
+written to GitHub), and grades those answers.
+
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.eval              # the report
-    python -m sdlc.eval --json       # the same, as JSON
+    python -m sdlc.eval                  # grade the stored decisions
+    python -m sdlc.eval --fresh          # what a blind re-run would send and cost; calls nothing
+    python -m sdlc.eval --fresh --yes    # re-run blind (about 40 Haiku calls) and grade that
+    python -m sdlc.eval --json           # any of the above, as JSON
 """
 
 import argparse
@@ -26,7 +36,9 @@ from sqlalchemy.orm import Session
 from sdlc.agents.triage import AGENT, POINTS
 from sdlc.tables import AgentDecision, Issue
 
-EVAL_SET = Path(__file__).resolve().parents[1] / "eval" / "triage_eval_set.json"
+EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
+EVAL_SET = EVAL_DIR / "triage_eval_set.json"
+ISSUE_TEXT = EVAL_DIR / "_issues.json"  # each issue's title and body, as the agent saw them
 BARS = {"module": 0.85, "type": 0.90, "points_within_one": 0.70}
 
 
@@ -86,9 +98,9 @@ def agent_answers(db: Session) -> dict[int, dict]:
     return answers
 
 
-def grade(db: Session, labels: list[dict] | None = None) -> dict:
+def grade(db: Session, labels: list[dict] | None = None, answers: dict | None = None) -> dict:
     labels = labels if labels is not None else load_eval_set()
-    answers = agent_answers(db)
+    answers = answers if answers is not None else agent_answers(db)
     titles = dict(
         db.execute(select(Issue.number, Issue.title).where(Issue.source == "github")).all()
     )
@@ -161,6 +173,65 @@ def grade(db: Session, labels: list[dict] | None = None) -> dict:
     }
 
 
+def run_blind(db: Session, llm, *, labels: list[dict], texts: dict[int, dict]) -> dict[int, dict]:
+    """Re-run the agent on each eval issue with no labels shown, recording trial rows."""
+    from sdlc.agents.triage import AGENT_VERSION, PROMPT_VERSION, assess
+    from sdlc.audit import TRIAL, record_decision
+
+    answers: dict[int, dict] = {}
+    for h in labels:
+        text = texts[h["issue"]]
+        a = assess(
+            db,
+            llm=llm,
+            title=text["title"],
+            body=text["body"],
+            labels=[],
+            number=None,
+            candidate_source="synthetic",
+        )
+        decision = record_decision(
+            db,
+            agent=AGENT,
+            agent_version=AGENT_VERSION,
+            subject_type="issue",
+            subject_source="github",
+            subject_id=h["issue"],
+            trigger=TRIAL,
+            model_id=llm.model,
+            prompt_version=PROMPT_VERSION,
+            output={
+                "module": a.module,
+                "type": a.type,
+                "priority": a.priority,
+                "estimate_points": a.estimate_points,
+                "confidence": a.confidence,
+                "eval": "blind",
+            }
+            if a.ok
+            else None,
+            action_taken={"trial": True, "eval": "blind"},
+            status=a.status,
+            error=a.error,
+            latency_ms=a.llm.latency_ms if a.llm else None,
+            input_tokens=a.llm.input_tokens if a.llm else None,
+            output_tokens=a.llm.output_tokens if a.llm else None,
+        )
+        db.commit()
+        if a.ok:
+            answers[h["issue"]] = {
+                "module": a.module,
+                "type": a.type,
+                "points": a.estimate_points,
+                "priority": a.priority,
+                "confidence": a.confidence,
+                "prompt_version": PROMPT_VERSION,
+                "decision_id": decision.id,
+                "tokens": (a.llm.input_tokens, a.llm.output_tokens) if a.llm else (0, 0),
+            }
+    return answers
+
+
 def describe(report: dict) -> str:
     s, bars, passed = report["scores"], report["bars"], report["passed"]
 
@@ -204,13 +275,62 @@ def describe(report: dict) -> str:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Grade the triage agent against the eval set.")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
+    parser.add_argument("--fresh", action="store_true", help="re-run the agent blind")
+    parser.add_argument("--yes", action="store_true", help="really call the API (costs money)")
     args = parser.parse_args(argv)
 
     from sdlc.db import SessionLocal
 
+    if not args.fresh:
+        with SessionLocal() as db:
+            report = grade(db)
+        print(json.dumps(report, indent=2) if args.json else describe(report))
+        return
+
+    from sdlc.agents.llm import StructuredLLM
+    from sdlc.agents.triage import SIMILAR_ISSUES_SHOWN, SYSTEM_PROMPT, build_prompt
+    from sdlc.config import get_settings
+    from sdlc.similarity import similar_issues
+
+    settings = get_settings()
+    llm = StructuredLLM(model=settings.triage_model, max_tokens=settings.triage_max_output_tokens)
+    labels = load_eval_set()
+    texts = {i["n"]: i for i in json.loads(ISSUE_TEXT.read_text(encoding="utf-8"))}
     with SessionLocal() as db:
-        report = grade(db)
-    print(json.dumps(report, indent=2) if args.json else describe(report))
+        if not args.yes:
+            chars = 0
+            for h in labels:
+                t = texts[h["issue"]]
+                shown = similar_issues(
+                    db, t["title"], t["body"], limit=SIMILAR_ISSUES_SHOWN, source="synthetic"
+                )
+                chars += len(SYSTEM_PROMPT) + len(build_prompt(t["title"], t["body"], [], shown))
+            tokens_in = chars // 2  # errs high, as the agents' own dry runs do
+            ceiling = tokens_in * 1.0 / 1e6 + len(labels) * llm.max_tokens * 5.0 / 1e6
+            print(
+                f"A blind re-run is {len(labels)} calls to {llm.model}: about {tokens_in:,} input "
+                f"tokens in all, a ceiling of roughly ${ceiling:.2f} (Haiku 4.5 rates). "
+                "Add --yes to run it."
+            )
+            return
+        answers = run_blind(db, llm, labels=labels, texts=texts)
+        report = grade(db, labels, answers)
+    spent_in = sum(a["tokens"][0] for a in answers.values())
+    spent_out = sum(a["tokens"][1] for a in answers.values())
+    report["blind_run"] = {
+        "calls": len(labels),
+        "input_tokens": spent_in,
+        "output_tokens": spent_out,
+        "cost_usd": round(spent_in * 1.0 / 1e6 + spent_out * 5.0 / 1e6, 4),
+    }
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print("BLIND RE-RUN: no labels shown; similar issues from simulated history only.")
+        print(describe(report))
+        b = report["blind_run"]
+        cost = f"about ${b['cost_usd']}"
+        print(f"\nCost: {b['input_tokens']:,} in / {b['output_tokens']:,} out, {cost}.")
 
 
 if __name__ == "__main__":

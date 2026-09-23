@@ -137,8 +137,16 @@ def assess(
     body: str,
     labels: list[str],
     number: int | None = None,
+    candidate_source: str | None = None,
 ) -> Assessment:
-    candidates = similar_issues(db, title, body, exclude_number=number, limit=SIMILAR_ISSUES_SHOWN)
+    candidates = similar_issues(
+        db,
+        title,
+        body,
+        exclude_number=number,
+        limit=SIMILAR_ISSUES_SHOWN,
+        source=candidate_source,
+    )
     try:
         result = llm.call(
             system=SYSTEM_PROMPT,

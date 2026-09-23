@@ -97,3 +97,48 @@ def test_the_committed_eval_set_is_complete_and_on_the_vocabulary():
     assert [r["issue"] for r in rows] == list(range(6, 46))
     for r in rows:
         assert r["module"] in MODULES and r["type"] in TYPES and r["points"] in POINTS
+
+
+def test_a_blind_rerun_shows_no_labels_uses_only_simulated_examples_and_records_trials(db, history):
+    from sqlalchemy import select
+
+    from sdlc.agents.llm import StructuredLLM
+    from sdlc.eval import run_blind
+    from sdlc.tables import AgentDecision, Issue
+    from tests.fakes import FakeAnthropic, response, triage_answer
+
+    # A real issue with Cowork-style labels must never be shown as an example.
+    db.add(
+        Issue(
+            source="github",
+            external_id="issue-7",
+            number=7,
+            title="Lead scoring explanations on the lead row",
+            module="leads",
+            type="feature",
+            estimate_points=8,
+            state="open",
+            created_at=datetime(2026, 9, 1),
+        )
+    )
+    db.commit()
+    labels = [label(6), label(8, type="chore")]
+    texts = {
+        6: {"title": "Score leads with a model", "body": "Lead scoring from engagement."},
+        8: {"title": "Detect duplicate leads", "body": "Match on email domain."},
+    }
+    llm = FakeAnthropic(
+        response(triage_answer(module="leads", type="feature", points=3)),
+        response(triage_answer(module="leads", type="feature", points=2)),
+    )
+    answers = run_blind(db, StructuredLLM(client=llm), labels=labels, texts=texts)
+
+    sent = [c["messages"][0]["content"] for c in llm.calls]
+    assert all("Existing labels: (none)" in s for s in sent)  # blind
+    assert all("Lead scoring explanations on the lead row" not in s for s in sent)
+    rows = list(db.scalars(select(AgentDecision).where(AgentDecision.agent == "triage")))
+    assert [(r.trigger, r.subject_id) for r in rows] == [("trial", 6), ("trial", 8)]
+    report = grade(db, labels, answers)
+    assert report["scores"]["type"] == 0.5
+    assert report["patterns"]["type"] == [{"human": "chore", "agent": "feature", "count": 1}]
+    assert grade(db, labels)["graded"] == 0  # trial rows never count as the agent's decisions

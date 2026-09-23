@@ -292,13 +292,20 @@ Open items:
 - **Evaluation set: labelled by Geoff (2026-09-23), graded by `python -m sdlc.eval`.** Geoff's own
   module/type/points (and priority, notes) for the 40 real backlog issues, labelled blind on the
   labelling sheet, live in `orchestrator/eval/triage_eval_set.json`. (`backlog.yaml` is Cowork's and
-  is not the eval set.) `sdlc.eval` grades the agent's latest successful decision per issue from
-  the audit table (no API calls) against the bars fixed beforehand: module 85%, type 90%, points
-  within one step 70%; priority reported, not gated. **First grading (prompt `triage-v1`): module
-  95% pass, type 88% fail, points-within-one 65% fail.** Read, not just counted: the prompt defined
-  neither the types nor the points scale (it anchored points on simulated `actual_days`, and ran
-  high: higher than Geoff on 20 issues, lower on 11); 4 of 5 type misses are integration/tooling
-  work Geoff labelled `chore` that is conventionally a `feature`, a definitions question for Geoff.
+  is not the eval set.) Bars fixed beforehand: module 85%, type 90%, points within one step 70%;
+  priority reported, not gated.
+  - **Grade blind, with `--fresh --yes`.** The triage prompt shows an issue's existing labels, and
+    the 40 issues were created carrying Cowork's labels, so the stored smoke-test decisions echo
+    Cowork (39/40 modules, 40/40 types, 34/40 exact points). `--fresh` re-runs the agent on each
+    issue's saved text (`eval/_issues.json`) with no labels shown and similar examples drawn from
+    simulated history only, records trial rows, and grades those (40 Haiku calls, about 8¢).
+  - **Blind baseline (prompt `triage-v1`, 2026-09-23): module 88% pass, type 85% fail, points
+    within one step 82% pass.** The type misses are one pattern: 6 issues Geoff called `chore`
+    that the agent called `feature` (Salesforce stage mapping, email sync, webhooks, cursor
+    pagination, the PR risk model, GitHub signal collection): integration, infrastructure and
+    internal-tooling work. The prompt defines none of the types. **TODO:** Geoff's definition of
+    `chore` goes into the prompt (as `triage-v2`), then one blind re-run. The eval set doubles as
+    the tuning set, so change the prompt once for the pattern, not repeatedly to the score.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
