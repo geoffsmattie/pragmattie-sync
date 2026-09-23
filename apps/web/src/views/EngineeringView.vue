@@ -4,6 +4,7 @@ import { getOrchJson } from '../api'
 import CycleTimeChart from '../components/charts/CycleTimeChart.vue'
 import VelocityChart from '../components/charts/VelocityChart.vue'
 import PageHeader from '../components/PageHeader.vue'
+import RiskCalibrationCard from '../components/RiskCalibrationCard.vue'
 import { MODULE_LABELS } from '../constants'
 
 const summary = ref(null)
@@ -185,6 +186,12 @@ const suiteHeaders = [
             </template>
           </v-data-table>
         </v-card>
+      </v-col>
+    </v-row>
+
+    <v-row v-if="modules.length" class="mt-2">
+      <v-col cols="12" lg="7">
+        <RiskCalibrationCard />
       </v-col>
     </v-row>
   </v-container>

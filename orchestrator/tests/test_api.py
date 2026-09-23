@@ -65,3 +65,13 @@ def test_forecast_endpoint_serves_saved_forecasts_and_how_they_moved(db, history
         client.get("/api/v1/signals/decisions", params={"subject_source": "mixed"}).status_code
         == 200
     )
+
+
+def test_calibration_endpoint_reports_thresholds_and_bars(history):
+    body = client.get("/api/v1/signals/calibration").json()
+    assert body["merged_prs"] > 300 and body["incident_prs"] > 0
+    assert set(body["thresholds"]) == {"T1", "T2", "T3"}
+    t1 = body["thresholds"]["T1"]
+    assert 0 <= t1["precision"] <= 1 and 0 <= t1["recall"] <= 1
+    assert set(body["bars"]) == {"t0_has_no_incidents", "top_decile_captures_majority"}
+    assert body["real_merged_prs"] == 0

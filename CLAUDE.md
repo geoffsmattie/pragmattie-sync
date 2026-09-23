@@ -325,6 +325,9 @@ Open items:
   them. The synthetic incidents come from the same factors the rubric reads, so this is a wiring
   check, not proof the score predicts real incidents. Re-run `calibrate` on real GitHub history
   once it exists, and tune weights, never outcomes.
+  The Engineering signals page shows precision and recall at each tier threshold and both bars for
+  this database's history (`GET /api/v1/signals/calibration`), saying plainly that one history is
+  noisy (bar 2 fails in the current local history: 7 of 15) and that the pooled grading is the judge.
 - **Evaluation-set labelling sheet (2026-09-23):** a private claude.ai page
   (https://claude.ai/artifact/6nYqQUpMV1iemzkYJK6Bei) showing the 40 real backlog issues (#6–#45)
   as the agent saw them, with no agent or Cowork labels. Geoff's answers save to the page's own
