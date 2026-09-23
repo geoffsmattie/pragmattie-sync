@@ -30,7 +30,7 @@ from sdlc.tables import MODULES
 
 AGENT = "triage"
 AGENT_VERSION = "v1"
-PROMPT_VERSION = "triage-v1"
+PROMPT_VERSION = "triage-v2"
 TYPES = ("feature", "bug", "chore")
 PRIORITIES = ("p1", "p2", "p3")
 POINTS = (1, 2, 3, 5, 8)
@@ -42,6 +42,12 @@ SYSTEM_PROMPT = f"""You triage new issues for a software team so intake is consi
 Classify the issue into:
 - module: which part of the product it touches
 - type: feature, bug or chore
+  - feature: new or changed behaviour that the end user can see or use
+  - bug: something that should work, or used to work, and doesn't
+  - chore: a change to the product that increases value and helps the product work better, but
+    is not necessarily visible to the end user (for example integrations plumbing,
+    infrastructure, API mechanics, performance, or internal and engineering tooling)
+  If an issue could be a feature or a chore, ask whether the end user would see the change.
 - priority: p1 (urgent), p2 (normal) or p3 (later) — your priority is reviewed by a human and
   never gates anything by itself, so use your best judgement from the text
 - estimate_points: 1, 2, 3, 5 or 8, anchored on the actual_days of the similar past issues you
