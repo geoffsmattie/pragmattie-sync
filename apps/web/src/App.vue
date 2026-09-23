@@ -9,6 +9,7 @@ const nav = [
   { title: 'Forecast', icon: 'mdi-chart-line', to: '/forecast' },
   { header: 'Delivery intelligence' },
   { title: 'Delivery board', icon: 'mdi-kanban', to: '/board' },
+  { title: 'Delivery forecast', icon: 'mdi-calendar-clock', to: '/delivery' },
   { title: 'Engineering signals', icon: 'mdi-pulse', to: '/engineering' },
   { title: 'Decision log', icon: 'mdi-format-list-checks', to: '/decisions' },
 ]

@@ -20,7 +20,7 @@ import json
 from dataclasses import asdict
 from datetime import date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from sdlc.audit import record_decision
@@ -232,6 +232,77 @@ def moved(db: Session, kind: str, subject: str) -> dict | None:
         "previous": before,
         "p50_days": shift("p50"),
         "p85_days": shift("p85"),
+    }
+
+
+TRAIL = 30  # past forecasts per subject for the dashboard's "how the date has moved" trail
+
+
+def serialize(row: Forecast) -> dict:
+    return {
+        "id": row.id,
+        "created_at": row.created_at.isoformat(),
+        "as_of": _iso(row.as_of),
+        "kind": row.kind,
+        "subject": row.subject,
+        "source": row.source,
+        "trigger": row.trigger,
+        "remaining_items": row.remaining_items,
+        "remaining_real": row.remaining_real,
+        "remaining_points": row.remaining_points,
+        "end_date": _iso(row.end_date),
+        "p50": _iso(row.p50),
+        "p85": _iso(row.p85),
+        "on_time_probability": row.on_time_probability,
+        "throughput_mean": row.throughput_mean,
+        "history_days": row.history_days,
+        "runs": row.runs,
+        "at_risk": row.at_risk or [],
+    }
+
+
+def dashboard(db: Session) -> dict:
+    """The latest saved forecast of the current sprint and of every epic, each with how its dates
+    moved since the forecast before and a short trail of past P50/P85s. Read-only: saving is the
+    forecaster's job, so nothing here runs a simulation."""
+
+    def entry(kind: str, subject: str) -> dict:
+        rows = list(
+            db.scalars(
+                select(Forecast)
+                .where(Forecast.kind == kind, Forecast.subject == subject)
+                .order_by(Forecast.created_at.desc(), Forecast.id.desc())
+                .limit(TRAIL)
+            )
+        )
+        shift = moved(db, kind, subject)
+        previous = shift["previous"]
+        return {
+            **serialize(rows[0]),
+            "moved": {
+                "p50_days": shift["p50_days"],
+                "p85_days": shift["p85_days"],
+                "previous_p50": _iso(previous.p50) if previous else None,
+                "previous_p85": _iso(previous.p85) if previous else None,
+                "previous_at": previous.created_at.isoformat() if previous else None,
+            },
+            "trail": [
+                {"at": r.created_at.isoformat(), "p50": _iso(r.p50), "p85": _iso(r.p85)}
+                for r in reversed(rows)
+            ],
+        }
+
+    newest_sprint = db.scalar(
+        select(Forecast.subject)
+        .where(Forecast.kind == "sprint")
+        .order_by(Forecast.created_at.desc(), Forecast.id.desc())
+        .limit(1)
+    )
+    epics = sorted(db.scalars(select(Forecast.subject).where(Forecast.kind == "epic").distinct()))
+    return {
+        "sprint": entry("sprint", newest_sprint) if newest_sprint else None,
+        "epics": [entry("epic", name) for name in epics],
+        "saved": db.scalar(select(func.count()).select_from(Forecast)),
     }
 
 

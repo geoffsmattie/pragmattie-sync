@@ -24,6 +24,11 @@ export const routes = [
     component: () => import('../views/BoardView.vue'),
   },
   {
+    path: '/delivery',
+    name: 'delivery',
+    component: () => import('../views/DeliveryForecastView.vue'),
+  },
+  {
     path: '/decisions',
     name: 'decisions',
     component: () => import('../views/DecisionLogView.vue'),

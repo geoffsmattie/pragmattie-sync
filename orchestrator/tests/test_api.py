@@ -22,3 +22,46 @@ def test_cycle_time_by_sprint_and_week(history):
     assert all(row["median_hours"] <= row["p85_hours"] for row in by_sprint if row["merged"])
     by_week = client.get("/api/v1/signals/cycle-time", params={"bucket": "week"}).json()
     assert by_week and "week" in by_week[0]
+
+
+def test_forecast_endpoint_serves_saved_forecasts_and_how_they_moved(db, history):
+    from sdlc.forecaster import ForecastRunner
+    from sdlc.tables import Issue
+    from tests.conftest import NOW
+
+    assert client.get("/api/v1/signals/forecast").json() == {
+        "sprint": None,
+        "epics": [],
+        "saved": 0,
+    }
+    agent = ForecastRunner("shadow", runs=300)
+    agent.poll_once(NOW)
+    for n in range(3):
+        db.add(
+            Issue(
+                source="github",
+                external_id=f"issue-{800 + n}",
+                number=800 + n,
+                title="Live story",
+                state="open",
+                created_at=NOW,
+                epic="Salesforce import",
+                estimate_points=3,
+            )
+        )
+    db.commit()
+    agent.poll_once(NOW)
+
+    body = client.get("/api/v1/signals/forecast").json()
+    assert body["sprint"]["subject"] == "Sprint 13" and body["sprint"]["moved"]["p50_days"] is None
+    assert len(body["epics"]) == 4 and body["saved"] == 6
+    epic = next(e for e in body["epics"] if e["subject"] == "Salesforce import")
+    assert epic["source"] == "mixed" and epic["moved"]["p50_days"] > 0
+    assert [t["p50"] for t in epic["trail"]] == [epic["moved"]["previous_p50"], epic["p50"]]
+
+    by_kind = client.get("/api/v1/signals/decisions", params={"subject_type": "epic"}).json()
+    assert by_kind["total"] == 5  # four scheduled, one after the live stories
+    assert (
+        client.get("/api/v1/signals/decisions", params={"subject_source": "mixed"}).status_code
+        == 200
+    )

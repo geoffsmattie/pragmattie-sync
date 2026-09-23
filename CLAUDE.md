@@ -341,3 +341,9 @@ Geoff:
   `ORCHESTRATOR_MODE=off` stops it. `synth --reset` forgets all saved forecasts.
   `forecaster.moved()` gives the latest forecast and how many days P50/P85 moved, for the
   dashboard. `trigger` is a MySQL reserved word: quote it in hand-written SQL.
+- **Delivery forecast page** (`/delivery`, `apps/web/src/views/DeliveryForecastView.vue`, helpers
+  in `src/forecast.js`): reads `GET /api/v1/signals/forecast` (the forecaster's saved rows via
+  `forecaster.dashboard()`; it never runs a simulation itself) every 15s. The sprint's P50/P85,
+  on-time chance, pace, at-risk items with reasons; each epic's dates, how far P50 moved and from
+  what, and a trail of past forecasts; a flash when a subject gets a new forecast. `/forecast` is
+  the CRM's sales forecast, a different thing.
