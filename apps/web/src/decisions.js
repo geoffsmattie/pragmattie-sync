@@ -12,7 +12,7 @@ export function subjectLabel(decision) {
 }
 
 // rejected: a person's tier override that the rules turned down (see sdlc/agents/overrides.py)
-// missed: CI failed a job the test selector would have skipped (see sdlc/test_selector.py)
+// missed: CI failed a job the test selector would have skipped (see sdlc/suite_selector.py)
 export const STATUS_COLORS = { ok: 'success', error: 'error', rejected: 'warning', missed: 'warning' }
 
 export function statusColor(status) {

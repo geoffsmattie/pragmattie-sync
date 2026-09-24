@@ -147,7 +147,7 @@ def render(
     tests: list[str] | None = None,
 ) -> str:
     """The whole comment. `tier` is the tier in force when a person has overridden the agent's;
-    `tests` is the test selector's section (sdlc/agents/test_select.py)."""
+    `tests` is the test selector's section (sdlc/agents/suite_select.py)."""
     agent_tier = assessment.assignment.tier
     tier = tier or agent_tier
     lines = [

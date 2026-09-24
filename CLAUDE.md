@@ -429,7 +429,7 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
   whether skipping would have been safe. That record is its track record, as shadow mode is for
   `risk-gate`. Don't make CI skip jobs without asking: selection inside CI couldn't see the tier
   (the agents run locally and poll), and a skipped job reports success to the ruleset.
-  - **Rules, no Claude** (`sdlc/agents/test_select.py`): changed paths map to the four real CI
+  - **Rules, no Claude** (`sdlc/agents/suite_select.py`): changed paths map to the four real CI
     jobs (`api`, `orchestrator`, `migrations`, `web`). Source under `apps/api` or `orchestrator`
     also selects `migrations` (it runs `alembic check` and seed/synth); a test-only change selects
     only its own job; docs/config select nothing. `.github/workflows/` or any path no rule covers
@@ -438,11 +438,11 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
     a re-run at least 3% of the time; the flag says how many of those runs were simulated.
   - **Shown in the PR risk comment** as a "Tests" section (one bot comment per PR), rewritten when a
     person changes the tier with `/tier`.
-  - **Audit rows** (`agent = test_selector`, `sdlc/test_selector.py`), each numbered by `attempt`
+  - **Audit rows** (`agent = test_selector`, `sdlc/suite_selector.py`), each numbered by `attempt`
     per commit: `poll` (the recommendation), `tier_change`, and `ci_result` once every CI job on
     that commit has finished, with status `missed` when a job it would have skipped really failed.
     Runs inside the PR risk agent's poll; looks for finished CI at most every 2 minutes, for 7 days.
-    Reads GitHub Actions only, never writes to it. `python -m sdlc.test_selector report` prints the
+    Reads GitHub Actions only, never writes to it. `python -m sdlc.suite_selector report` prints the
     track record (misses, failures caught, flaky re-runs, CI minutes it would have saved).
   - **Synthetic suites now match the real jobs**: `orchestrator` was added (its own random stream,
     so the rest of the history is unchanged; its CI failures do feed the risk rubric, and the
