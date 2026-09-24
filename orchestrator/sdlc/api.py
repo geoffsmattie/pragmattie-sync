@@ -125,7 +125,7 @@ def decisions(
     agent: str | None = None,
     subject_type: Literal["pr", "issue", "sprint", "epic"] | None = None,
     subject_source: Literal["synthetic", "github", "mixed"] | None = None,
-    status: Literal["ok", "error", "rejected"] | None = None,
+    status: Literal["ok", "error", "rejected", "missed"] | None = None,
     tier: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),

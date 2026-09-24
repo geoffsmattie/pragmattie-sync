@@ -22,7 +22,16 @@ async function handle(response, path) {
   } catch {
     // not JSON; keep the generic message
   }
-  throw new Error(detail)
+  const error = new Error(detail)
+  error.status = response.status // the service answered: this is its error, not a lost connection
+  throw error
+}
+
+/** A message for a failed orchestrator call. Only a request that got no answer at all suggests
+ * the service is down; an error it sent back (a bad filter, say) is shown as it is. */
+export function orchErrorMessage(err) {
+  if (err.status) return err.message
+  return `${err.message}. Is the orchestrator service running on port 8001?`
 }
 
 export async function getJson(path, params) {
