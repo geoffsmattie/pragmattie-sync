@@ -141,7 +141,16 @@ work always gets a person. **Status: designed, not yet built — implementation 
 | **T3: Critical** | Risk ≥ 80, or touches Billing/Auth, or schema migration | 2 humans incl. code owner | Full suite + manual QA | Human sign-off required |
 
 - **Overrides:** a human can raise any PR's tier at any time; lowering a tier requires a
-  written reason in the PR. Both go to the audit log.
+  written reason in the PR. Both go to the audit log. **Built (2026-09-23)** as a PR comment
+  command read by the PR risk agent's poll (`sdlc/agents/overrides.py`): `/tier T3` raises (reason
+  optional, and it **sticks** for the PR across later commits); `/tier T1 <reason>` lowers only
+  with a reason of at least 10 characters, and only for the **commit it was made on** (a new push
+  is new risk). **Nothing goes below a policy floor** (Billing/Auth, migrations,
+  pipeline/forecasting): floors change in `tiers.yaml`, not by comment. Every command, accepted or
+  rejected, is an audit row (`agent = tier_override`, `trigger = human`, `status` ok/rejected,
+  `human_override` = from/to/actor/reason/why); the agent's own decision row keeps its own tier.
+  The label, the gate, the simulated approver request and the comment's heading, override list
+  and "what this tier needs" boxes all follow the tier in force.
 - **Enforcement (planned):** the `main` ruleset will require a `risk-gate` status check.
   The PR risk agent sets it to pass only when the tier's approvals are present. Every agent
   decision is written to an audit table with its inputs, scores and the tier applied.
@@ -218,8 +227,10 @@ Open items:
     sign-off boxes), `github_effects.py` (the only writes: one comment, one `tier:` label, the
     status), and `sdlc/runner.py` (the poll loop, now shared with triage — see below).
   - `ORCHESTRATOR_MODE` ships as `off`, which does nothing at all; `dry-run <pr>` shows the exact
-    request and a cost ceiling and calls nothing; `try <pr>` needs `--yes` to spend money and
-    writes nothing. Start polling with `docker compose --profile agents up -d`.
+    request and a cost ceiling and calls nothing; `try <pr>` needs `--yes` to spend money, never
+    writes to GitHub, and records one `trigger = trial` audit row so its tokens count in cost
+    reports (added 2026-09-23). The poll loops and the delivery board ignore trial rows; the
+    decision log shows them. Start polling with `docker compose --profile agents up -d`.
   - A new commit is assessed once and its sign-off boxes start empty. A failed run fails closed to
     the floor tier or T2 and is retried up to three times, five minutes apart.
   - The agent never merges, approves, closes or pushes, and the model can't name a tier.
@@ -287,13 +298,56 @@ Open items:
   `src/components/decisions/DecisionDetailDrawer.vue`, `src/decisions.js` (pure formatting
   helpers, unit-tested) — uses Vuetify's server-side data table since this log is meant to grow
   for as long as the agents run, not stay small like a demo table.
-- **TODO — evaluation set.** The acceptance bars (module 85%, type 90%, points within one step
-    70%) need an evaluation set "labelled by Geoff first" — real human judgement, not Claude's.
-    `orchestrator/backlog/backlog.yaml` has 40 issues with module/type/points set, but Geoff
-    confirmed on 2026-09-23 that **Cowork wrote those, not him** — so it cannot be the eval set;
-    grading against it would just check the agent against another AI's guesses. He needs to
-    hand-label a real set (his own module/type/points call on 40 real or realistic issues) before
-    the eval harness can be built and the acceptance bars checked.
+- **Evaluation set: labelled by Geoff (2026-09-23), graded by `python -m sdlc.eval`.** Geoff's own
+  module/type/points (and priority, notes) for the 40 real backlog issues, labelled blind on the
+  labelling sheet, live in `orchestrator/eval/triage_eval_set.json`. (`backlog.yaml` is Cowork's and
+  is not the eval set.) Bars fixed beforehand: module 85%, type 90%, points within one step 70%;
+  priority reported, not gated.
+  - **Grade blind, with `--fresh --yes`.** The triage prompt shows an issue's existing labels, and
+    the 40 issues were created carrying Cowork's labels, so the stored smoke-test decisions echo
+    Cowork (39/40 modules, 40/40 types, 34/40 exact points). `--fresh` re-runs the agent on each
+    issue's saved text (`eval/_issues.json`) with no labels shown and similar examples drawn from
+    simulated history only, records trial rows, and grades those (40 Haiku calls, about 8¢).
+  - **Blind baseline (prompt `triage-v1`, 2026-09-23): module 88% pass, type 85% fail, points
+    within one step 82% pass.** The type misses are one pattern: 6 issues Geoff called `chore`
+    that the agent called `feature` (Salesforce stage mapping, email sync, webhooks, cursor
+    pagination, the PR risk model, GitHub signal collection): integration, infrastructure and
+    internal-tooling work. The prompt defined none of the types. The eval set doubles as the
+    tuning set, so the prompt changes once for the pattern, not repeatedly to the score.
+  - **`triage-v2` (2026-09-23)** defines the types. `chore` is Geoff's wording: "a change to the
+    product that increases value and helps the product work better, but is not necessarily visible
+    to the end user". `feature`, `bug`, the examples and the tie-breaker ("would the end user see
+    the change?") are Claude's. **Blind re-run: module 90% pass, type 82% fail, points within one
+    step 82% pass** (about 9¢). It fixed one chore miss (GitHub signal collection) but still called
+    5 of Geoff's chores features (Salesforce stage mapping, email sync, webhooks, cursor
+    pagination, the PR risk model), and called 2 of Geoff's features chores (#22 exchange rates,
+    #38 structured JSON logging). The remaining misses look like a gap between the written
+    definition and the labels, not something the agent can learn: by "visible to the end user",
+    email sync and webhooks read as features and JSON logging as a chore.
+  - **Decision (Geoff, 2026-09-23): accept and record.** Type stays failing at 82%; the 90% bar is
+    not lowered and the 40 labels are not changed to match the agent. The type label never gates
+    anything, so triage kept running in shadow on `triage-v2`. This set is now spent for tuning:
+    no further prompt changes are graded against it.
+  - **`triage-v3` (2026-09-24)** says who counts as a user per part of the product (CRM modules:
+    reps, managers, customer admins, so API mechanics are chores; orchestrator: the engineering
+    team, through what it shows them). Graded only on a **holdout set**: 20 invented issues
+    (#9001–#9020, `eval/holdout_issues.json`) that Geoff labelled blind on 2026-09-24
+    (`eval/triage_holdout_set.json`, sheet https://claude.ai/artifact/8Mk6FexGt8SLbkF7u8JoPK),
+    same bars. `python -m sdlc.eval --set holdout --fresh --yes`; its trial rows are recorded as
+    `synthetic`. **Result: module 90% pass, type 75% fail, points within one step 80% pass**
+    (about 5¢). Type misses: #9006 (table move) and #9020 (token totals) Geoff feature / agent
+    chore; #9015 (webhook retries) chore / feature; #9013 (API rate limit) and #9018 (key
+    rotation) Geoff bug / agent feature or chore. The written rule and the labels still diverge
+    (missing capability labelled as a bug; integrations as chores). At 20 issues each miss is 5
+    points, so the two sets' type scores aren't directly comparable.
+  - **Decision (Geoff, 2026-09-24): accept and record, again.** Type stays failing; the bar and
+    labels stay as they are. Triage runs in shadow on `triage-v3`. The holdout set is now spent
+    too. Type gates nothing on real issues (it's shown in comments, examples and planner context
+    only), and a human correction sticks.
+  - **If type is reopened:** first measure Geoff's own consistency (re-label ~15 of the 60 issues
+    blind, shuffled, and compare with his earlier labels). At ~95% self-agreement, write the rule
+    down and grade a `triage-v4` on a fresh holdout; at ~80%, the 90% bar is above what the labels
+    support, and that is the finding to record.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
@@ -304,6 +358,9 @@ Open items:
   them. The synthetic incidents come from the same factors the rubric reads, so this is a wiring
   check, not proof the score predicts real incidents. Re-run `calibrate` on real GitHub history
   once it exists, and tune weights, never outcomes.
+  The Engineering signals page shows precision and recall at each tier threshold and both bars for
+  this database's history (`GET /api/v1/signals/calibration`), saying plainly that one history is
+  noisy (bar 2 fails in the current local history: 7 of 15) and that the pooled grading is the judge.
 - **Evaluation-set labelling sheet (2026-09-23):** a private claude.ai page
   (https://claude.ai/artifact/6nYqQUpMV1iemzkYJK6Bei) showing the 40 real backlog issues (#6–#45)
   as the agent saw them, with no agent or Cowork labels. Geoff's answers save to the page's own
@@ -347,3 +404,15 @@ Geoff:
   on-time chance, pace, at-risk items with reasons; each epic's dates, how far P50 moved and from
   what, and a trail of past forecasts; a flash when a subject gets a new forecast. `/forecast` is
   the CRM's sales forecast, a different thing.
+- **The planner agent** (`sdlc/agents/planner.py`, runner `sdlc/plan_runner.py`, Sonnet 5 via
+  `PLANNER_MODEL`, medium effort): runs after the forecaster in the poll loop when the sprint
+  **slips** (its saved P85 is past its last day, i.e. on-time chance under 85%). It drafts up to
+  three options (defer / reassign / split) once per slipping forecast; failures retry up to 3
+  times, 5 minutes apart; at most 4 calls per sprint per day. Code drops any item or person the
+  model names that it wasn't shown, clamps confidence, and **measures each defer option by
+  re-running the same seeded simulation** without those items, so every date and percentage on the
+  page comes from the forecast, never the model. Reassign/split effects are shown as not
+  measurable. Proposes only: the draft is an audit row (`subject_type` sprint, `subject_id` = the
+  forecast), shown on `/delivery` (marked out of date once the forecast moves on). `python -m
+  sdlc.plan_runner dry-run` shows the request and a cost ceiling (about $0.03); `try --yes` makes
+  one real call and records only a `trial` audit row; `synth --reset` clears planner rows with the forecasts.

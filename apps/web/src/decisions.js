@@ -11,7 +11,8 @@ export function subjectLabel(decision) {
   return `${kind} #${decision.subject_id}`
 }
 
-export const STATUS_COLORS = { ok: 'success', error: 'error' }
+// rejected: a person's tier override that the rules turned down (see sdlc/agents/overrides.py)
+export const STATUS_COLORS = { ok: 'success', error: 'error', rejected: 'warning' }
 
 export function statusColor(status) {
   return STATUS_COLORS[status] ?? 'default'

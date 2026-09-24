@@ -92,6 +92,8 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'PR risk', value: 'pr_risk' },
             { title: 'Triage', value: 'triage' },
             { title: 'Forecaster', value: 'forecaster' },
+            { title: 'Planner', value: 'planner' },
+            { title: 'Tier overrides', value: 'tier_override' },
           ]"
           label="Agent"
           density="compact"
@@ -122,6 +124,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'All statuses', value: '' },
             { title: 'OK', value: 'ok' },
             { title: 'Error', value: 'error' },
+            { title: 'Rejected', value: 'rejected' },
           ]"
           label="Status"
           density="compact"

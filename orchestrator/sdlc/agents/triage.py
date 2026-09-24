@@ -30,7 +30,7 @@ from sdlc.tables import MODULES
 
 AGENT = "triage"
 AGENT_VERSION = "v1"
-PROMPT_VERSION = "triage-v1"
+PROMPT_VERSION = "triage-v3"
 TYPES = ("feature", "bug", "chore")
 PRIORITIES = ("p1", "p2", "p3")
 POINTS = (1, 2, 3, 5, 8)
@@ -42,6 +42,17 @@ SYSTEM_PROMPT = f"""You triage new issues for a software team so intake is consi
 Classify the issue into:
 - module: which part of the product it touches
 - type: feature, bug or chore
+  - feature: new or changed behaviour that a user of that part of the product sees or uses
+  - bug: something that should work, or used to work, and doesn't
+  - chore: a change to the product that increases value and helps the product work better, but
+    is not visible to its users (for example data plumbing behind a screen, infrastructure,
+    upgrades, logging, performance, or how the API pages or formats its responses)
+  Who counts as a user depends on the part being changed:
+  - CRM modules: sales reps, managers and the customer's admins, in the app or its settings
+    screens. Developers calling the API are not users, so API mechanics are chores.
+  - orchestrator: the engineering team, through the comments, labels, checks and dashboards it
+    shows them. What runs behind those (collecting data, training a model) is a chore.
+  If an issue could be a feature or a chore, ask whether those users would see or use the change.
 - priority: p1 (urgent), p2 (normal) or p3 (later) — your priority is reviewed by a human and
   never gates anything by itself, so use your best judgement from the text
 - estimate_points: 1, 2, 3, 5 or 8, anchored on the actual_days of the similar past issues you
@@ -137,8 +148,16 @@ def assess(
     body: str,
     labels: list[str],
     number: int | None = None,
+    candidate_source: str | None = None,
 ) -> Assessment:
-    candidates = similar_issues(db, title, body, exclude_number=number, limit=SIMILAR_ISSUES_SHOWN)
+    candidates = similar_issues(
+        db,
+        title,
+        body,
+        exclude_number=number,
+        limit=SIMILAR_ISSUES_SHOWN,
+        source=candidate_source,
+    )
     try:
         result = llm.call(
             system=SYSTEM_PROMPT,

@@ -5,13 +5,16 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from sdlc import audit, forecaster, metrics
 from sdlc import board as board_module
+from sdlc.calibration import calibrate
 from sdlc.config import get_settings
 from sdlc.db import get_db
+from sdlc.tables import PullRequest
+from sdlc.tiers import load_policy
 
 settings = get_settings()
 DB = Annotated[Session, Depends(get_db)]
@@ -96,6 +99,20 @@ def board(
     )
 
 
+@app.get("/api/v1/signals/calibration")
+def calibration(db: DB) -> dict:
+    """How well the risk score separates the merged PRs that caused incidents in this database's
+    history: precision and recall at each tier threshold, and the blueprint's two bars. One
+    history is a noisy judge; the bars are graded pooled with `sdlc.risk calibrate --generated`."""
+    report = calibrate(db, load_policy())
+    real = db.scalar(
+        select(func.count())
+        .select_from(PullRequest)
+        .where(PullRequest.state == "merged", PullRequest.source == "github")
+    )
+    return {**report, "real_merged_prs": real}
+
+
 @app.get("/api/v1/signals/forecast")
 def forecast(db: DB) -> dict:
     """The forecaster agent's latest saved sprint and epic forecasts, and how their dates moved."""
@@ -108,7 +125,7 @@ def decisions(
     agent: str | None = None,
     subject_type: Literal["pr", "issue", "sprint", "epic"] | None = None,
     subject_source: Literal["synthetic", "github", "mixed"] | None = None,
-    status: Literal["ok", "error"] | None = None,
+    status: Literal["ok", "error", "rejected"] | None = None,
     tier: str | None = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),

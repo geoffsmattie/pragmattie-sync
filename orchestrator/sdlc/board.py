@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from sdlc.agents.pr_risk import AGENT as PR_RISK_AGENT
 from sdlc.agents.triage import AGENT as TRIAGE_AGENT
+from sdlc.audit import TRIAL
 from sdlc.tables import (
     AgentDecision,
     Deployment,
@@ -107,7 +108,10 @@ class Board:
 
 def _decisions_by_subject(db: Session, agent: str) -> dict[tuple[str, int], list[AgentDecision]]:
     out: dict[tuple[str, int], list[AgentDecision]] = defaultdict(list)
-    for d in db.scalars(select(AgentDecision).where(AgentDecision.agent == agent)):
+    query = select(AgentDecision).where(
+        AgentDecision.agent == agent, AgentDecision.trigger != TRIAL
+    )
+    for d in db.scalars(query):
         out[(d.subject_source, d.subject_id)].append(d)
     for rows in out.values():
         rows.sort(key=lambda d: d.created_at)

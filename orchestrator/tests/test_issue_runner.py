@@ -194,3 +194,29 @@ def test_every_run_leaves_exactly_one_audit_row(db):
     runner.poll_once(NOW)
     runner.poll_once(NOW + RETRY_AFTER + timedelta(seconds=1))
     assert len(llm.calls) == len(decisions(db)) == 2
+
+
+def look(runner, command, **kwargs):
+    from argparse import Namespace
+
+    from sdlc.issue_runner import _look
+
+    _look(runner, Namespace(command=command, number=12, **kwargs), None)
+
+
+def test_try_with_yes_records_only_a_trial_row(db, capsys):
+    runner, gh, llm = setup("shadow")
+    look(runner, "try", yes=True)
+    assert "recorded as a trial audit row" in capsys.readouterr().out
+    assert len(llm.calls) == 1 and gh.writes == []
+    (row,) = decisions(db)
+    assert (row.trigger, row.status, row.subject_id, row.head_sha) == ("trial", "ok", 12, None)
+    assert row.input_tokens and row.output_tokens
+
+
+def test_a_trial_run_never_stands_in_for_the_real_triage(db, capsys):
+    runner, gh, llm = setup("shadow", response(triage_answer()), response(triage_answer()))
+    look(runner, "try", yes=True)
+    runner.poll_once(NOW)
+    assert len(llm.calls) == 2
+    assert [d.trigger for d in decisions(db)] == ["trial", "opened"]  # "opened": no prior decision

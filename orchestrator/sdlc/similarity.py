@@ -45,9 +45,17 @@ def jaccard(a: set[str], b: set[str]) -> float:
 
 
 def similar_issues(
-    db: Session, title: str, body: str, *, exclude_number: int | None = None, limit: int = 10
+    db: Session,
+    title: str,
+    body: str,
+    *,
+    exclude_number: int | None = None,
+    limit: int = 10,
+    source: str | None = None,
 ) -> list[SimilarIssue]:
-    """The `limit` most similar past issues (any state), title weighted over body, best first."""
+    """The `limit` most similar past issues (any state), title weighted over body, best first.
+    `source` limits them to one source (the blind evaluation uses only simulated history, so
+    no other eval issue, with its labels, can be shown as an example)."""
     query_tokens = tokens(title) | tokens(body[:500])
     if not query_tokens:
         return []
@@ -55,6 +63,8 @@ def similar_issues(
     query = select(Issue).where(Issue.number.is_not(None))
     if exclude_number is not None:
         query = query.where(Issue.number != exclude_number)
+    if source is not None:
+        query = query.where(Issue.source == source)
 
     scored = []
     for issue in db.scalars(query):

@@ -146,6 +146,18 @@ class FakeGitHub:
         mine = [c for c in self.comments.get(number, []) if marker in c["body"]]
         return mine[0] if mine else None
 
+    def human_comment(self, number, body, login="geoff"):
+        """A comment a person leaves on the PR (e.g. a `/tier` command)."""
+        self._ids += 1
+        comment = {
+            "id": self._ids,
+            "body": body,
+            "user": {"login": login},
+            "html_url": f"https://github.com/{REPO}/pull/{number}#issuecomment-{self._ids}",
+        }
+        self.comments.setdefault(number, []).append(comment)
+        return comment
+
     def tick(self, number, label):
         comment = self.comment_on(number)
         comment["body"] = comment["body"].replace(f"- [ ] **{label}", f"- [x] **{label}")

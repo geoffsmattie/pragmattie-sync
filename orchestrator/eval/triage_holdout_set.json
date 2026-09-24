@@ -1,0 +1,167 @@
+{
+  "description": "Triage holdout set: Geoff's own module/type/points (and priority) for 20 invented issues (#9001-#9020, text in holdout_issues.json), labelled blind on 2026-09-24 via the holdout labelling sheet, before any agent saw them. Grades triage-v3 with `python -m sdlc.eval --set holdout --fresh --yes`; never used for tuning.",
+  "labelled_by": "Geoff",
+  "labelled_on": "2026-09-24",
+  "issues": [
+    {
+      "issue": 9001,
+      "module": "accounts",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9002,
+      "module": "leads",
+      "type": "bug",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9003,
+      "module": "platform",
+      "type": "chore",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9004,
+      "module": "accounts",
+      "type": "feature",
+      "points": 2,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9005,
+      "module": "accounts",
+      "type": "bug",
+      "points": 2,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9006,
+      "module": "accounts",
+      "type": "feature",
+      "points": 2,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9007,
+      "module": "pipeline",
+      "type": "feature",
+      "points": 1,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9008,
+      "module": "pipeline",
+      "type": "bug",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9009,
+      "module": "pipeline",
+      "type": "chore",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9010,
+      "module": "forecasting",
+      "type": "bug",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9011,
+      "module": "forecasting",
+      "type": "feature",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9012,
+      "module": "forecasting",
+      "type": "chore",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9013,
+      "module": "platform",
+      "type": "bug",
+      "points": 2,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9014,
+      "module": "integrations",
+      "type": "feature",
+      "points": 5,
+      "priority": "p2",
+      "note": null
+    },
+    {
+      "issue": 9015,
+      "module": "integrations",
+      "type": "chore",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9016,
+      "module": "billing_auth",
+      "type": "feature",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9017,
+      "module": "billing_auth",
+      "type": "bug",
+      "points": 3,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9018,
+      "module": "billing_auth",
+      "type": "bug",
+      "points": 5,
+      "priority": "p1",
+      "note": null
+    },
+    {
+      "issue": 9019,
+      "module": "platform",
+      "type": "feature",
+      "points": 3,
+      "priority": "p3",
+      "note": null
+    },
+    {
+      "issue": 9020,
+      "module": "platform",
+      "type": "feature",
+      "points": 3,
+      "priority": "p2",
+      "note": null
+    }
+  ]
+}

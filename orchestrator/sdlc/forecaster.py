@@ -299,16 +299,44 @@ def dashboard(db: Session) -> dict:
         .limit(1)
     )
     epics = sorted(db.scalars(select(Forecast.subject).where(Forecast.kind == "epic").distinct()))
+    sprint = entry("sprint", newest_sprint) if newest_sprint else None
+    if sprint:
+        sprint["proposal"] = _proposal(db, newest_sprint, sprint["id"])
     return {
-        "sprint": entry("sprint", newest_sprint) if newest_sprint else None,
+        "sprint": sprint,
         "epics": [entry("epic", name) for name in epics],
         "saved": db.scalar(select(func.count()).select_from(Forecast)),
     }
 
 
+def _proposal(db: Session, sprint_name: str, latest_forecast_id: int) -> dict | None:
+    """The planner's newest draft for this sprint, if any, and whether the forecast has moved on
+    since it was drafted (then it's shown as out of date, not hidden)."""
+    from sdlc.plan_runner import latest_proposal  # the planner builds on this module
+
+    d = latest_proposal(db, sprint_name)
+    if d is None:
+        return None
+    return {
+        "decision_id": d.id,
+        "created_at": d.created_at.isoformat(),
+        "status": d.status,
+        "error": d.error,
+        "model": d.model_id,
+        "input_tokens": d.input_tokens,
+        "output_tokens": d.output_tokens,
+        "current": d.subject_id == latest_forecast_id,
+        **{
+            k: v
+            for k, v in (d.output or {}).items()
+            if k not in ("request_id", "cache_read_tokens")
+        },
+    }
+
+
 def reset(db: Session) -> None:
     """Forget every saved forecast and its audit rows (the history they describe is regenerated)."""
-    db.execute(delete(AgentDecision).where(AgentDecision.agent == AGENT))
+    db.execute(delete(AgentDecision).where(AgentDecision.agent.in_([AGENT, "planner"])))
     db.execute(delete(Forecast))
 
 

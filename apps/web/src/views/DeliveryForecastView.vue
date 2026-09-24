@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { getOrchJson } from '../api'
 import ForecastTrail from '../components/forecast/ForecastTrail.vue'
+import PlannerProposal from '../components/forecast/PlannerProposal.vue'
 import PageHeader from '../components/PageHeader.vue'
 import { MODULE_LABELS } from '../constants'
 import {
@@ -15,6 +16,8 @@ import {
 } from '../forecast'
 
 const POLL_MS = 15_000
+// Mirrors orchestrator/sdlc/agents/planner.py's SLIP_BELOW: P85 past the sprint's last day.
+const SLIP_BELOW = 0.85
 
 const data = ref(null)
 const loading = ref(true)
@@ -167,6 +170,11 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             </div>
           </div>
         </div>
+
+        <PlannerProposal
+          :proposal="data.sprint.proposal"
+          :slipping="data.sprint.remaining_items > 0 && data.sprint.on_time_probability < SLIP_BELOW"
+        />
       </v-card>
 
       <!-- The epics -->

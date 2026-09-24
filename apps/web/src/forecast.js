@@ -81,3 +81,20 @@ export function changedSubjects(before, after) {
   }
   return changed
 }
+
+export const ACTION_LABELS = { defer: 'Defer', reassign: 'Reassign', split: 'Split' }
+
+/**
+ * The measured effect of a planner option, e.g. "On-time 22% → 71% · P85 Tue, Sep 29 → Fri, Sep 25".
+ * Code measures this by re-running the forecast; the model never supplies it. Null when the
+ * option isn't something the simulation can measure (reassigning or splitting).
+ */
+export function effectLabel(effect) {
+  if (!effect) return null
+  const pct = (p) => `${Math.round(p * 100)}%`
+  const parts = [`On-time ${pct(effect.from.on_time_probability)} → ${pct(effect.on_time_probability)}`]
+  if (effect.from.p85 !== effect.p85) {
+    parts.push(`P85 ${dayLabel(effect.from.p85)} → ${dayLabel(effect.p85)}`)
+  }
+  return parts.join(' · ')
+}

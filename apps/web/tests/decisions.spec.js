@@ -22,6 +22,7 @@ describe('subjectLabel', () => {
 describe('statusColor', () => {
   it('maps known statuses', () => {
     expect(statusColor('ok')).toBe('success')
+    expect(statusColor('rejected')).toBe('warning')
     expect(statusColor('error')).toBe('error')
   })
 

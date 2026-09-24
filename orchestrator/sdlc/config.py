@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     risk_model: str = "claude-sonnet-5"
     triage_model: str = "claude-haiku-4-5"
     triage_max_output_tokens: int = 1500
+    # The planner agent (Phase 5): drafts scope options when the sprint forecast slips.
+    planner_model: str = "claude-sonnet-5"
+    planner_max_output_tokens: int = 2500
     # off: the agents do nothing and write nothing to GitHub. shadow: they comment, label and
     # record decisions, but the risk-gate status always passes. enforce: the status gates merges.
     orchestrator_mode: Literal["off", "shadow", "enforce"] = "off"
