@@ -142,3 +142,54 @@ def test_a_blind_rerun_shows_no_labels_uses_only_simulated_examples_and_records_
     assert report["scores"]["type"] == 0.5
     assert report["patterns"]["type"] == [{"human": "chore", "agent": "feature", "count": 1}]
     assert grade(db, labels)["graded"] == 0  # trial rows never count as the agent's decisions
+
+
+def test_holdout_trials_are_recorded_as_simulated_and_graded_on_their_own_titles(db, history):
+    from sqlalchemy import select
+
+    from sdlc.agents.llm import StructuredLLM
+    from sdlc.eval import run_blind
+    from sdlc.tables import AgentDecision
+    from tests.fakes import FakeAnthropic, response, triage_answer
+
+    labels = [label(9001, type="chore")]
+    texts = {9001: {"n": 9001, "title": "Upgrade the web image to Node 22", "body": "Node 20 EOL."}}
+    llm = FakeAnthropic(response(triage_answer(module="platform", type="chore", points=2)))
+    answers = run_blind(
+        db, StructuredLLM(client=llm), labels=labels, texts=texts, subject_source="synthetic"
+    )
+
+    row = db.scalars(select(AgentDecision).where(AgentDecision.agent == "triage")).one()
+    assert (row.trigger, row.subject_source, row.subject_id) == ("trial", "synthetic", 9001)
+    labels[0]["points"] = 5  # a miss, so the report must carry the holdout issue's own title
+    report = grade(db, labels, answers, titles={9001: texts[9001]["title"]})
+    assert report["scores"]["type"] == 1.0
+    assert report["disagreements"][0]["title"] == "Upgrade the web image to Node 22"
+
+
+def test_the_holdout_set_can_only_be_graded_fresh():
+    import pytest
+
+    from sdlc.eval import main
+
+    with pytest.raises(SystemExit):
+        main(["--set", "holdout"])
+
+
+def test_the_holdout_set_once_labelled_matches_its_issues_and_the_vocabulary():
+    import json
+
+    import pytest
+
+    from sdlc.agents.triage import POINTS, TYPES
+    from sdlc.eval import HOLDOUT_SET, HOLDOUT_TEXT
+    from sdlc.tables import MODULES
+
+    issues = json.loads(HOLDOUT_TEXT.read_text(encoding="utf-8"))
+    assert all(i["n"] >= 9001 and i["body"].strip() for i in issues)  # never a real issue number
+    if not HOLDOUT_SET.exists():
+        pytest.skip("holdout set not labelled yet")
+    rows = load_eval_set(HOLDOUT_SET)
+    assert sorted(r["issue"] for r in rows) == sorted(i["n"] for i in issues)
+    for r in rows:
+        assert r["module"] in MODULES and r["type"] in TYPES and r["points"] in POINTS

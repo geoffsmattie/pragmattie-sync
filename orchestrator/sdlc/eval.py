@@ -17,10 +17,18 @@ past issues drawn from the simulated history only (so no other eval issue, with 
 can appear as an example), records each call as a `trial` audit row (tokens counted, nothing
 written to GitHub), and grades those answers.
 
+Holdout set. The 40 backlog issues were used to tune the prompt (triage-v2), so they can no
+longer judge a later prompt fairly. `--set holdout` grades against invented issues
+(eval/holdout_issues.json) that Geoff labelled blind before any agent saw them
+(eval/triage_holdout_set.json), with the same bars. Holdout issues exist nowhere else, so they are
+always graded fresh; their trial rows are recorded as simulated (source `synthetic`, numbers from
+9001) so the decision log never shows them as real GitHub issues.
+
 Usage (inside the orchestrator container, or locally with the same .env):
     python -m sdlc.eval                  # grade the stored decisions
     python -m sdlc.eval --fresh          # what a blind re-run would send and cost; calls nothing
     python -m sdlc.eval --fresh --yes    # re-run blind (about 40 Haiku calls) and grade that
+    python -m sdlc.eval --set holdout --fresh --yes   # grade blind on the holdout set
     python -m sdlc.eval --json           # any of the above, as JSON
 """
 
@@ -39,6 +47,12 @@ from sdlc.tables import AgentDecision, Issue
 EVAL_DIR = Path(__file__).resolve().parents[1] / "eval"
 EVAL_SET = EVAL_DIR / "triage_eval_set.json"
 ISSUE_TEXT = EVAL_DIR / "_issues.json"  # each issue's title and body, as the agent saw them
+HOLDOUT_SET = EVAL_DIR / "triage_holdout_set.json"
+HOLDOUT_TEXT = EVAL_DIR / "holdout_issues.json"
+SETS = {  # name -> (labels, issue text, audit source of its trial rows)
+    "backlog": (EVAL_SET, ISSUE_TEXT, "github"),
+    "holdout": (HOLDOUT_SET, HOLDOUT_TEXT, "synthetic"),
+}
 BARS = {"module": 0.85, "type": 0.90, "points_within_one": 0.70}
 
 
@@ -98,12 +112,18 @@ def agent_answers(db: Session) -> dict[int, dict]:
     return answers
 
 
-def grade(db: Session, labels: list[dict] | None = None, answers: dict | None = None) -> dict:
+def grade(
+    db: Session,
+    labels: list[dict] | None = None,
+    answers: dict | None = None,
+    titles: dict[int, str] | None = None,
+) -> dict:
     labels = labels if labels is not None else load_eval_set()
     answers = answers if answers is not None else agent_answers(db)
-    titles = dict(
-        db.execute(select(Issue.number, Issue.title).where(Issue.source == "github")).all()
-    )
+    if titles is None:
+        titles = dict(
+            db.execute(select(Issue.number, Issue.title).where(Issue.source == "github")).all()
+        )
     rows = [
         Row(
             issue=h["issue"],
@@ -173,7 +193,14 @@ def grade(db: Session, labels: list[dict] | None = None, answers: dict | None = 
     }
 
 
-def run_blind(db: Session, llm, *, labels: list[dict], texts: dict[int, dict]) -> dict[int, dict]:
+def run_blind(
+    db: Session,
+    llm,
+    *,
+    labels: list[dict],
+    texts: dict[int, dict],
+    subject_source: str = "github",
+) -> dict[int, dict]:
     """Re-run the agent on each eval issue with no labels shown, recording trial rows."""
     from sdlc.agents.triage import AGENT_VERSION, PROMPT_VERSION, assess
     from sdlc.audit import TRIAL, record_decision
@@ -195,7 +222,7 @@ def run_blind(db: Session, llm, *, labels: list[dict], texts: dict[int, dict]) -
             agent=AGENT,
             agent_version=AGENT_VERSION,
             subject_type="issue",
-            subject_source="github",
+            subject_source=subject_source,
             subject_id=h["issue"],
             trigger=TRIAL,
             model_id=llm.model,
@@ -277,7 +304,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
     parser.add_argument("--fresh", action="store_true", help="re-run the agent blind")
     parser.add_argument("--yes", action="store_true", help="really call the API (costs money)")
+    parser.add_argument(
+        "--set", choices=sorted(SETS), default="backlog", help="which labelled issues to grade"
+    )
     args = parser.parse_args(argv)
+    labels_path, text_path, source = SETS[args.set]
+    if args.set == "holdout" and not args.fresh:
+        parser.error("the holdout set has no stored decisions: grade it with --fresh")
 
     from sdlc.db import SessionLocal
 
@@ -294,8 +327,8 @@ def main(argv: list[str] | None = None) -> None:
 
     settings = get_settings()
     llm = StructuredLLM(model=settings.triage_model, max_tokens=settings.triage_max_output_tokens)
-    labels = load_eval_set()
-    texts = {i["n"]: i for i in json.loads(ISSUE_TEXT.read_text(encoding="utf-8"))}
+    labels = load_eval_set(labels_path)
+    texts = {i["n"]: i for i in json.loads(text_path.read_text(encoding="utf-8"))}
     with SessionLocal() as db:
         if not args.yes:
             chars = 0
@@ -313,8 +346,9 @@ def main(argv: list[str] | None = None) -> None:
                 "Add --yes to run it."
             )
             return
-        answers = run_blind(db, llm, labels=labels, texts=texts)
-        report = grade(db, labels, answers)
+        answers = run_blind(db, llm, labels=labels, texts=texts, subject_source=source)
+        report = grade(db, labels, answers, titles={n: t["title"] for n, t in texts.items()})
+    report["set"] = args.set
     spent_in = sum(a["tokens"][0] for a in answers.values())
     spent_out = sum(a["tokens"][1] for a in answers.values())
     report["blind_run"] = {
@@ -326,7 +360,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.json:
         print(json.dumps(report, indent=2))
     else:
-        print("BLIND RE-RUN: no labels shown; similar issues from simulated history only.")
+        print(
+            f"BLIND RE-RUN on the {args.set} set: no labels shown; "
+            "similar issues from simulated history only."
+        )
         print(describe(report))
         b = report["blind_run"]
         cost = f"about ${b['cost_usd']}"
