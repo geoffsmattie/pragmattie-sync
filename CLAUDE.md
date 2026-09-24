@@ -17,9 +17,9 @@ here is marked **TODO**, it has not been decided yet — ask Geoff rather than g
   deployment** and none should be added without asking. "Deployments" and "incidents" in the
   orchestrator are synthetic history, not real production events.
 - The plan lives in the blueprint doc ("PragMattie Sync: Predictive SDLC Orchestration
-  Blueprint"). Phases: 1 Foundation ✅ · 2 CRM ✅ · 3 Signals + synthetic history ✅ (on
-  `phase-3-signals`) · 4 First agents (triage + PR risk, governance tiers) · 5 Forecasting ·
-  6 Polish + client demo.
+  Blueprint"). Phases: 1 Foundation ✅ · 2 CRM ✅ · 3 Signals + synthetic history ✅ · 4 First agents
+  (triage + PR risk, governance tiers) ✅ · 5 Forecasting ✅ (#47, #48) · 6 Polish + client demo
+  (on `phase-6-polish`).
 
 ## Stack (settled — don't swap without asking)
 
