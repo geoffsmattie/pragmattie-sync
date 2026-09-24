@@ -17,9 +17,9 @@ here is marked **TODO**, it has not been decided yet — ask Geoff rather than g
   deployment** and none should be added without asking. "Deployments" and "incidents" in the
   orchestrator are synthetic history, not real production events.
 - The plan lives in the blueprint doc ("PragMattie Sync: Predictive SDLC Orchestration
-  Blueprint"). Phases: 1 Foundation ✅ · 2 CRM ✅ · 3 Signals + synthetic history ✅ (on
-  `phase-3-signals`) · 4 First agents (triage + PR risk, governance tiers) · 5 Forecasting ·
-  6 Polish + client demo.
+  Blueprint"). Phases: 1 Foundation ✅ · 2 CRM ✅ · 3 Signals + synthetic history ✅ · 4 First agents
+  (triage + PR risk, governance tiers) ✅ · 5 Forecasting ✅ (#47, #48) · 6 Polish + client demo
+  (on `phase-6-polish`).
 
 ## Stack (settled — don't swap without asking)
 
@@ -348,8 +348,8 @@ Open items:
     blind, shuffled, and compare with his earlier labels). At ~95% self-agreement, write the rule
     down and grade a `triage-v4` on a fresh holdout; at ~80%, the 90% bar is above what the labels
     support, and that is the finding to record.
-- **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
-  the "manual QA" step for T3 consists of.
+- "Selected suites" (T0/T1) means the test selector's choice of CI jobs; see Phase 6 decisions.
+  **TODO:** what the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
   depending only on the random draw. So the rubric is graded on 30 generated histories pooled
   (`python -m sdlc.risk calibrate --generated 30`). The bars were fixed on 2026-09-20, before the
@@ -416,3 +416,35 @@ Geoff:
   forecast), shown on `/delivery` (marked out of date once the forecast moves on). `python -m
   sdlc.plan_runner dry-run` shows the request and a cost ceiling (about $0.03); `try --yes` makes
   one real call and records only a `trial` audit row; `synth --reset` clears planner rows with the forecasts.
+
+### Phase 6 decisions (2026-09-24)
+
+Branch `phase-6-polish`. Scope from the blueprint: test selector, release gate, accuracy trend,
+demo reset + pre-demo check (`sdlc.demo_reset`, `sdlc.demo_check`), logo and consulting-offer
+slide, then the demo script, rehearsal and a recorded backup. The audit log view is already done
+(the decision log).
+
+- **Test selector: built (2026-09-24), recommendation only.** Decided with Geoff: it says which CI
+  jobs a PR would need, but **CI still runs every job**, so each commit's real CI result shows
+  whether skipping would have been safe. That record is its track record, as shadow mode is for
+  `risk-gate`. Don't make CI skip jobs without asking: selection inside CI couldn't see the tier
+  (the agents run locally and poll), and a skipped job reports success to the ruleset.
+  - **Rules, no Claude** (`sdlc/agents/test_select.py`): changed paths map to the four real CI
+    jobs (`api`, `orchestrator`, `migrations`, `web`). Source under `apps/api` or `orchestrator`
+    also selects `migrations` (it runs `alembic check` and seed/synth); a test-only change selects
+    only its own job; docs/config select nothing. `.github/workflows/` or any path no rule covers
+    selects every job, as does a tier whose `tests` in `tiers.yaml` starts "full suite" (T2, T3) or
+    a failed risk assessment. Flaky flags: a job with 20+ runs in 60 days that failed then passed on
+    a re-run at least 3% of the time; the flag says how many of those runs were simulated.
+  - **Shown in the PR risk comment** as a "Tests" section (one bot comment per PR), rewritten when a
+    person changes the tier with `/tier`.
+  - **Audit rows** (`agent = test_selector`, `sdlc/test_selector.py`), each numbered by `attempt`
+    per commit: `poll` (the recommendation), `tier_change`, and `ci_result` once every CI job on
+    that commit has finished, with status `missed` when a job it would have skipped really failed.
+    Runs inside the PR risk agent's poll; looks for finished CI at most every 2 minutes, for 7 days.
+    Reads GitHub Actions only, never writes to it. `python -m sdlc.test_selector report` prints the
+    track record (misses, failures caught, flaky re-runs, CI minutes it would have saved).
+  - **Synthetic suites now match the real jobs**: `orchestrator` was added (its own random stream,
+    so the rest of the history is unchanged; its CI failures do feed the risk rubric, and the
+    pooled calibration bars still pass). `integrations-e2e` stays as a simulated-only flaky suite
+    that the selector never picks. An existing database needs `sdlc.synth --reset` to get it.

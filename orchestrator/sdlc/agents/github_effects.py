@@ -35,6 +35,9 @@ class Effects:
     def read_diff(self, number: int) -> str:
         return self.gh.get_text(f"/repos/{{repo}}/pulls/{number}", "application/vnd.github.diff")
 
+    def read_files(self, number: int) -> list[str]:
+        return [f["filename"] for f in self.gh.paginate(f"/repos/{{repo}}/pulls/{number}/files")]
+
     def read_comments(self, number: int) -> list[dict]:
         """Every comment on this PR or issue, oldest first."""
         return list(self.gh.paginate(f"/repos/{{repo}}/issues/{number}/comments"))

@@ -93,6 +93,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'Triage', value: 'triage' },
             { title: 'Forecaster', value: 'forecaster' },
             { title: 'Planner', value: 'planner' },
+            { title: 'Test selector', value: 'test_selector' },
             { title: 'Tier overrides', value: 'tier_override' },
           ]"
           label="Agent"
@@ -125,6 +126,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'OK', value: 'ok' },
             { title: 'Error', value: 'error' },
             { title: 'Rejected', value: 'rejected' },
+            { title: 'Missed', value: 'missed' },
           ]"
           label="Status"
           density="compact"

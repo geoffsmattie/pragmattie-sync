@@ -144,8 +144,10 @@ def render(
     *,
     tier: str | None = None,
     override_lines: list[str] | None = None,
+    tests: list[str] | None = None,
 ) -> str:
-    """The whole comment. `tier` is the tier in force when a person has overridden the agent's."""
+    """The whole comment. `tier` is the tier in force when a person has overridden the agent's;
+    `tests` is the test selector's section (sdlc/agents/test_select.py)."""
     agent_tier = assessment.assignment.tier
     tier = tier or agent_tier
     lines = [
@@ -184,6 +186,8 @@ def render(
         ]
     if assessment.assignment.reasons:
         lines += ["", *[f"- {reason}" for reason in assessment.assignment.reasons]]
+    if tests:
+        lines += ["", *tests]
 
     lines += ["", *overrides_block(override_lines or [])]
     lines += ["", *needs_lines(policy, tier, approvals, meta.approver_name)]
