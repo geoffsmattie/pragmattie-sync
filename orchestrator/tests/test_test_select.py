@@ -208,7 +208,8 @@ def test_a_skipped_job_that_failed_is_a_miss_and_a_flaky_one_is_not(db):
 
     report = test_selector.report(db)
     assert report["missed"] == [(7, "api")] and report["flaky_reruns"] == 1
-    assert "misses): 1" in test_selector.describe(report)
+    text = test_selector.describe(report)
+    assert "misses): 1" in text and "1 commit with CI results" in text
 
 
 def test_a_failure_in_a_selected_job_counts_as_caught(db):

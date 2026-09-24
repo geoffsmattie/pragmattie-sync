@@ -228,7 +228,8 @@ def describe(r: dict) -> str:
     if not r["commits"]:
         return "No commits have finished CI since the test selector started recommending."
     lines = [
-        f"Test selector track record: {r['commits']} commits with CI results.",
+        f"Test selector track record: {r['commits']} "
+        f"{'commit' if r['commits'] == 1 else 'commits'} with CI results.",
         f"  Would have run {r['jobs_run']} jobs and skipped {r['jobs_skipped']}, "
         f"saving about {r['saved_minutes']} CI minutes.",
         f"  Skipped jobs that really failed (misses): {len(r['missed'])}",
