@@ -27,3 +27,6 @@ Thumbs.db
 
 # Files the Claude desktop app saves into this folder
 Claude outputs/
+
+# The demo baseline (python -m sdlc.demo_reset baseline): describes one person's repository
+orchestrator/.demo/

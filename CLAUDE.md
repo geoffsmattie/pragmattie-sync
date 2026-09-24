@@ -65,6 +65,8 @@ docker compose up --build       # web :5173, CRM API :8000, orchestrator :8001, 
 docker compose up --build -V    # after dependency changes (renews the node_modules volume)
 docker compose exec api python -m app.seed --reset             # reset CRM demo data
 docker compose exec orchestrator python -m sdlc.synth --reset  # regenerate engineering history
+.\scripts\demo.ps1 reset -Apply     # between demos: CRM, history and GitHub back to a clean start
+.\scripts\demo.ps1 check            # the pre-demo checklist (-Smoke also calls Claude, ~5 cents)
 ```
 
 Never commit `.env`. GitHub scripts need `GITHUB_TOKEN` (fine-grained, this repo only) and
@@ -448,3 +450,26 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
     so the rest of the history is unchanged; its CI failures do feed the risk rubric, and the
     pooled calibration bars still pass). `integrations-e2e` stays as a simulated-only flaky suite
     that the selector never picks. An existing database needs `sdlc.synth --reset` to get it.
+- **Demo reset and pre-demo check: built (2026-09-24).** One command each, from the repo root in
+  PowerShell: `.\scripts\demo.ps1 reset` (a dry run; `-Apply` to do it) and `.\scripts\demo.ps1
+  check` (`-Smoke` also scores one real PR and triages one real issue with Claude, about 5 cents,
+  recorded as trial rows). The blueprint asked for `python -m sdlc.demo_reset`; the CRM's seed runs
+  in the `api` container, which the orchestrator can't reach, so the PowerShell script drives both
+  (and pauses the agent loop during a reset). The Python halves are `sdlc/demo_reset.py` and
+  `sdlc/demo_check.py`.
+  - **The baseline** is a snapshot of the repository at a clean moment (issues with state and
+    labels, PR numbers, branches), recorded with `demo.ps1 baseline` into
+    `orchestrator/.demo/baseline.json` (git-ignored). Recorded 2026-09-24 with the 40 backlog issues
+    open, 12 PRs, no open PRs. Anything numbered after it is demo residue; nothing in the baseline,
+    `main`, or any baseline branch is ever closed or deleted.
+  - **A reset** closes issues opened during the demo (GitHub can't delete them), puts backlog
+    issues back to their baseline state and labels, closes demo PRs and deletes their agent
+    comments, `tier:` labels and branches (in this repo, not in the baseline), reseeds the CRM,
+    regenerates the simulated history for today (which forgets saved forecasts and planner
+    drafts), forgets audit rows, simulated approvals and gate states about demo items, collects
+    from GitHub and saves fresh forecasts. It lists what it left behind (merged demo PRs' commits,
+    new branches with no PR, closed demo issues). The GitHub token needs Issues, Pull requests and
+    Contents (branch deletion) write.
+  - **The check** covers containers and the agent loop, the web app, both APIs, both databases'
+    data, migrations at head, a sprint in progress, forecasts saved today, GitHub access, a clean
+    start against the baseline, and `ORCHESTRATOR_MODE` (off fails). Exit code 1 on any failure.
