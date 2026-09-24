@@ -75,3 +75,25 @@ def test_calibration_endpoint_reports_thresholds_and_bars(history):
     assert 0 <= t1["precision"] <= 1 and 0 <= t1["recall"] <= 1
     assert set(body["bars"]) == {"t0_has_no_incidents", "top_decile_captures_majority"}
     assert body["real_merged_prs"] == 0
+
+
+def test_the_decision_log_filters_by_every_status_the_agents_write(db):
+    from sdlc.audit import record_decision
+
+    for status in ("ok", "error", "rejected", "missed"):
+        record_decision(
+            db,
+            agent="test_selector",
+            agent_version="v1",
+            subject_type="pr",
+            subject_source="github",
+            subject_id=1,
+            trigger="poll",
+            head_sha=status,
+            status=status,
+        )
+    db.commit()
+    for status in ("ok", "error", "rejected", "missed"):
+        body = client.get("/api/v1/signals/decisions", params={"status": status}).json()
+        assert [d["status"] for d in body["decisions"]] == [status]
+    assert client.get("/api/v1/signals/decisions", params={"status": "nope"}).status_code == 422

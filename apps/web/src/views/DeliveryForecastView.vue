@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { getOrchJson } from '../api'
+import { getOrchJson, orchErrorMessage } from '../api'
 import ForecastTrail from '../components/forecast/ForecastTrail.vue'
 import PlannerProposal from '../components/forecast/PlannerProposal.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -38,7 +38,7 @@ async function load() {
     }
     error.value = ''
   } catch (err) {
-    error.value = `${err.message}. Is the orchestrator service running on port 8001?`
+    error.value = orchErrorMessage(err)
   } finally {
     loading.value = false
   }

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { getOrchJson } from '../api'
+import { getOrchJson, orchErrorMessage } from '../api'
 import { cardAtTime, columnStatsAt, deriveFilterOptions, groupByColumn, movedCardKeys } from '../board'
 import BoardColumn from '../components/board/BoardColumn.vue'
 import CardDetailDrawer from '../components/board/CardDetailDrawer.vue'
@@ -47,7 +47,7 @@ async function loadBoard() {
     }
     error.value = ''
   } catch (err) {
-    error.value = `${err.message}. Is the orchestrator service running on port 8001?`
+    error.value = orchErrorMessage(err)
   } finally {
     loading.value = false
   }

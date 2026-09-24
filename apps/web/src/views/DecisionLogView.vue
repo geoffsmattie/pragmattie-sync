@@ -1,6 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { getOrchJson } from '../api'
+import { getOrchJson, orchErrorMessage } from '../api'
 import DecisionDetailDrawer from '../components/decisions/DecisionDetailDrawer.vue'
 import PageHeader from '../components/PageHeader.vue'
 import { TIER_COLORS } from '../constants'
@@ -54,7 +54,7 @@ async function load() {
     total.value = data.total
     error.value = ''
   } catch (err) {
-    error.value = `${err.message}. Is the orchestrator service running on port 8001?`
+    error.value = orchErrorMessage(err)
   } finally {
     loading.value = false
   }

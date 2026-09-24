@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getOrchJson } from '../api'
+import { getOrchJson, orchErrorMessage } from '../api'
 import CycleTimeChart from '../components/charts/CycleTimeChart.vue'
 import VelocityChart from '../components/charts/VelocityChart.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -33,7 +33,7 @@ onMounted(async () => {
     modules.value = m
     sources.value = src
   } catch (err) {
-    error.value = `${err.message}. Is the orchestrator service running on port 8001?`
+    error.value = orchErrorMessage(err)
   } finally {
     loading.value = false
   }
