@@ -90,6 +90,8 @@ class FakeGitHub:
         self.statuses: list[dict] = []
         self.requests: list[tuple[str, str]] = []  # (method, path) of everything, reads too
         self.fail: set[str] = set()  # any request whose path contains one of these gets a 500
+        self.runs: dict[str, list[dict]] = {}  # head sha -> Actions workflow runs
+        self.jobs: dict[int, list[dict]] = {}  # run id -> its jobs, every attempt
         self._ids = 1000
 
     # -- test helpers -------------------------------------------------------------------------
@@ -157,6 +159,26 @@ class FakeGitHub:
         }
         self.comments.setdefault(number, []).append(comment)
         return comment
+
+    def ci(self, sha, jobs):
+        """One CI run on `sha`. `jobs` maps a job name to its conclusions, one per attempt
+        (None while running), e.g. {"Web (tests + build)": ["failure", "success"]}."""
+        self._ids += 1
+        run_id = self._ids
+        self.runs.setdefault(sha, []).append(
+            {"id": run_id, "head_sha": sha, "created_at": f"2026-09-21T09:{len(self.runs):02d}:00Z"}
+        )
+        self.jobs[run_id] = [
+            {
+                "name": name,
+                "run_attempt": attempt,
+                "conclusion": conclusion,
+                "started_at": "2026-09-21T09:00:00Z",
+                "completed_at": "2026-09-21T09:03:00Z" if conclusion else None,
+            }
+            for name, conclusions in jobs.items()
+            for attempt, conclusion in enumerate(conclusions, 1)
+        ]
 
     def tick(self, number, label):
         comment = self.comment_on(number)
@@ -235,6 +257,12 @@ class FakeGitHub:
         if method == "POST" and (m := _re.fullmatch(rf"{base}/statuses/(\w+)", path)):
             self.statuses.append({"sha": m[1], **body})
             return httpx.Response(201, json={})
+        if method == "GET" and path == f"{base}/actions/runs":
+            runs = self.runs.get(request.url.params.get("head_sha"), [])
+            return httpx.Response(200, json={"total_count": len(runs), "workflow_runs": runs})
+        if method == "GET" and (m := _re.fullmatch(rf"{base}/actions/runs/(\d+)/jobs", path)):
+            jobs = self.jobs.get(int(m[1]), [])
+            return httpx.Response(200, json={"total_count": len(jobs), "jobs": jobs})
         if method == "POST" and path == f"{base}/labels":
             return httpx.Response(201, json={})
         if m := _re.fullmatch(rf"{base}/issues/(\d+)/labels", path):

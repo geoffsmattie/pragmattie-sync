@@ -1,6 +1,7 @@
 """Poll GitHub and run the agents. (The demo is local-only, so it polls; no webhooks.)
 
-`run` and `once` drive the PR risk agent (this module), the triage agent
+`run` and `once` drive the PR risk agent (this module, with the test selector's recommendation
+and track record from sdlc/test_selector.py), the triage agent
 (sdlc/issue_runner.py), the forecaster (sdlc/forecaster.py) and the planner (sdlc/plan_runner.py)
 together, one poll cycle each, in one process — one container for the whole orchestrator, per
 the blueprint's shared ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
@@ -30,7 +31,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from sdlc import gate_status
+from sdlc import gate_status, test_selector
 from sdlc.agents.comment import MARKER, Meta, comment_head, read_ticks, refresh, render, retier
 from sdlc.agents.gate import Approvals, evaluate
 from sdlc.agents.github_effects import Effects
@@ -49,6 +50,7 @@ from sdlc.agents.pr_risk import (
     assess,
     build_prompt,
 )
+from sdlc.agents.test_select import replace_section, section_lines
 from sdlc.agents.triage_comment import MARKER as TRIAGE_MARKER
 from sdlc.approver import ApproverError, load_approvers, request_approval, resolve_approver
 from sdlc.audit import TRIAL, decisions_for, record_decision
@@ -69,6 +71,7 @@ log = logging.getLogger("sdlc.runner")
 
 MAX_ATTEMPTS = 3
 RETRY_AFTER = timedelta(minutes=5)
+SETTLE_EVERY = timedelta(minutes=2)  # how often to look for finished CI on recommended commits
 # Rough Sonnet 5 rates in dollars per million tokens, only for the dry-run estimate.
 INPUT_RATE, OUTPUT_RATE = 2.0, 10.0
 
@@ -83,6 +86,7 @@ class Runner:
         self.diff_char_limit = get_settings().diff_char_limit
         self._last_status: dict[tuple[int, str], tuple[str, str]] = {}
         self._last_label: dict[int, str] = {}  # PR -> tier label last written
+        self._last_settle: datetime | None = None
 
     # --- one poll ----------------------------------------------------------------------------
 
@@ -100,6 +104,15 @@ class Runner:
             except (GitHubError, IntegrityError) as err:
                 summary["errors"] += 1
                 log.warning("PR #%s: %s", item["number"], err)
+        if self._last_settle is None or now - self._last_settle >= SETTLE_EVERY:
+            self._last_settle = now
+            try:
+                with SessionLocal() as db:
+                    summary["ci_results"] = test_selector.settle(db, self.gh, now)
+                    db.commit()
+            except GitHubError as err:
+                summary["errors"] += 1
+                log.warning("test selector: %s", err)
         return summary
 
     def _handle(self, item: dict, now: datetime, summary: dict) -> None:
@@ -155,6 +168,16 @@ class Runner:
         approver = self._request_simulated_approval(db, pr, tier)
         approvals = Approvals()  # a new commit starts with nothing signed off
         gate = evaluate(self.policy, tier, ok=assessment.ok, approvals=approvals, mode=self.mode)
+        selection = test_selector.recommend(
+            db,
+            pr,
+            sha,
+            self.effects.read_files(pr.number),
+            tier=tier,
+            policy=self.policy,
+            assessed=assessment.ok,
+            now=now,
+        )
 
         # Record first so the comment can name its decision; the row is one flush, one commit.
         decision = record_decision(
@@ -193,6 +216,7 @@ class Runner:
             meta,
             tier=tier,
             override_lines=[describe_ruling(r) for r in rulings],
+            tests=section_lines(selection),
         )
         decision.action_taken = {
             "comment": self.effects.upsert_comment(pr.number, body, comment),
@@ -306,8 +330,27 @@ class Runner:
                     approver_name=self._approver_name(),
                     override_lines=lines,
                 )
+            updated = self._retest(db, pr, sha, tier, ok, updated, now)
             if updated != comment["body"]:
                 self.effects.upsert_comment(pr.number, updated, comment)
+
+    def _retest(self, db, pr, sha, tier, ok, body, now) -> str:
+        """A new test recommendation when a person has changed the tier since the last one."""
+        latest = test_selector.latest_recommendation(db, pr, sha)
+        if latest is None or latest.tier == tier:
+            return body
+        selection = test_selector.recommend(
+            db,
+            pr,
+            sha,
+            latest.output.get("paths", []),
+            tier=tier,
+            policy=self.policy,
+            assessed=ok,
+            now=now,
+            trigger="tier_change",
+        )
+        return replace_section(body, selection)
 
     @staticmethod
     def _approver_name() -> str:

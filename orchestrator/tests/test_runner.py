@@ -26,7 +26,14 @@ def setup(mode, *outcomes, files=LEADS, adjustment=0, pr=7, sha="sha1"):
 
 
 def decisions(db):
-    return list(db.scalars(select(AgentDecision).order_by(AgentDecision.id)))
+    """Every audit row except the test selector's (tests/test_test_select.py covers those)."""
+    return list(
+        db.scalars(
+            select(AgentDecision)
+            .where(AgentDecision.agent != "test_selector")
+            .order_by(AgentDecision.id)
+        )
+    )
 
 
 def test_mode_off_does_nothing_at_all(db):
@@ -199,7 +206,10 @@ def test_every_run_leaves_exactly_one_audit_row(db):
     runner.poll_once(NOW + RETRY_AFTER + timedelta(seconds=1))
     runner.poll_once(NOW + RETRY_AFTER + timedelta(minutes=1))
     assert len(llm.calls) == len(decisions(db)) == 2
-    assert db.scalar(select(func.count()).select_from(AgentDecision)) == 2
+    # Plus the test selector's recommendation for each run: every job while the run failed.
+    selector = db.scalars(select(AgentDecision).where(AgentDecision.agent == "test_selector"))
+    assert [len(r.output["suites"]) for r in selector] == [4, 1]
+    assert db.scalar(select(func.count()).select_from(AgentDecision)) == 4
 
 
 def look(runner, command, **kwargs):

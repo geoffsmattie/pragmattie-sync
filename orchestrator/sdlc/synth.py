@@ -114,6 +114,16 @@ EPICS = {
 }
 EPIC_SPRINTS = 6  # epics started this many sprints ago (the forecast's whole history window)
 SUITES = ["api", "web", "migrations", "integrations-e2e"]
+# The real CI's orchestrator job, added in Phase 6 so the simulated suites match the real ones
+# (plus integrations-e2e, which is simulated only). Drawn from its own stream: see _make_ci_runs.
+LATE_SUITES = ["orchestrator"]
+SUITE_SECONDS = {
+    "api": 150,
+    "web": 110,
+    "migrations": 90,
+    "integrations-e2e": 540,
+    "orchestrator": 240,
+}
 MODULE_LABELS = {
     "leads": "Leads",
     "accounts": "Accounts",
@@ -257,7 +267,7 @@ def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[st
                 db.add(pr)
                 db.flush()
                 counts["pull_requests"] += 1
-                counts["ci_runs"] += _make_ci_runs(db, rng, pr, author)
+                counts["ci_runs"] += _make_ci_runs(db, rng, pr, seed)
                 if pr.state == "merged":
                     merged_prs.append(pr)
                     risks.append(risk)
@@ -394,16 +404,20 @@ def _assign_incidents(rng: random.Random, prs: list[PullRequest], risks: list[fl
         pr.reverted = rng.random() < 0.5
 
 
-def _make_ci_runs(db: Session, rng: random.Random, pr: PullRequest, author: Persona) -> int:
+def _make_ci_runs(db: Session, rng: random.Random, pr: PullRequest, seed: int) -> int:
+    """Every suite on every push. The original four draw from `rng` in their original order;
+    later suites draw from a per-PR stream, so adding them never shifts the rest of the history."""
+    late = random.Random(f"{seed}:ci:{pr.number}")
     pushes = 1 + pr.rework_commits
     runs = 0
     for push in range(pushes):
         started = pr.created_at + timedelta(hours=push * rng.uniform(1, 6))
-        for suite in SUITES:
-            real_fail = rng.random() < (0.12 if push == 0 else 0.04) * (
+        for suite in SUITES + LATE_SUITES:
+            r = late if suite in LATE_SUITES else rng
+            real_fail = r.random() < (0.12 if push == 0 else 0.04) * (
                 1.5 if pr.additions > 400 else 1
             )
-            flaky = not real_fail and rng.random() < (0.08 if suite == "integrations-e2e" else 0.01)
+            flaky = not real_fail and r.random() < (0.08 if suite == "integrations-e2e" else 0.01)
             db.add(
                 CIRun(
                     source=SOURCE,
@@ -413,10 +427,7 @@ def _make_ci_runs(db: Session, rng: random.Random, pr: PullRequest, author: Pers
                     conclusion="failure" if (real_fail or flaky) else "success",
                     flaky=flaky,
                     started_at=started,
-                    duration_seconds=int(
-                        {"api": 150, "web": 110, "migrations": 90, "integrations-e2e": 540}[suite]
-                        * rng.uniform(0.8, 1.3)
-                    ),
+                    duration_seconds=int(SUITE_SECONDS[suite] * r.uniform(0.8, 1.3)),
                 )
             )
             runs += 1

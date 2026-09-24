@@ -24,6 +24,7 @@ describe('statusColor', () => {
     expect(statusColor('ok')).toBe('success')
     expect(statusColor('rejected')).toBe('warning')
     expect(statusColor('error')).toBe('error')
+    expect(statusColor('missed')).toBe('warning')
   })
 
   it('falls back for an unknown status', () => {
