@@ -1,4 +1,4 @@
-"""The test selector's audit trail and track record (the rules live in sdlc/agents/test_select.py).
+"""The test selector's audit trail and track record (the rules live in sdlc/agents/suite_select.py).
 
 Runs inside the PR risk agent's poll (sdlc/runner.py), so it needs no process of its own and obeys
 the same ORCHESTRATOR_MODE. Every row is an ordinary audit row with agent `test_selector`:
@@ -12,7 +12,7 @@ CI still runs every job (recommendation only), so the ci_result rows are a fair 
 how often skipping would have been safe, and how many CI minutes it would have saved.
 
 Usage (inside the orchestrator container, or locally with the same .env):
-    python -m sdlc.test_selector report      # the track record so far
+    python -m sdlc.suite_selector report      # the track record so far
 """
 
 import argparse
@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from sdlc.agents.test_select import (
+from sdlc.agents.suite_select import (
     AGENT,
     AGENT_VERSION,
     CI_SUITES,

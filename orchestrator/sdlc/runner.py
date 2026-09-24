@@ -1,7 +1,7 @@
 """Poll GitHub and run the agents. (The demo is local-only, so it polls; no webhooks.)
 
 `run` and `once` drive the PR risk agent (this module, with the test selector's recommendation
-and track record from sdlc/test_selector.py), the triage agent
+and track record from sdlc/suite_selector.py), the triage agent
 (sdlc/issue_runner.py), the forecaster (sdlc/forecaster.py) and the planner (sdlc/plan_runner.py)
 together, one poll cycle each, in one process — one container for the whole orchestrator, per
 the blueprint's shared ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from sdlc import gate_status, test_selector
+from sdlc import gate_status, suite_selector
 from sdlc.agents.comment import MARKER, Meta, comment_head, read_ticks, refresh, render, retier
 from sdlc.agents.gate import Approvals, evaluate
 from sdlc.agents.github_effects import Effects
@@ -50,7 +50,7 @@ from sdlc.agents.pr_risk import (
     assess,
     build_prompt,
 )
-from sdlc.agents.test_select import replace_section, section_lines
+from sdlc.agents.suite_select import replace_section, section_lines
 from sdlc.agents.triage_comment import MARKER as TRIAGE_MARKER
 from sdlc.approver import ApproverError, load_approvers, request_approval, resolve_approver
 from sdlc.audit import TRIAL, decisions_for, record_decision
@@ -108,7 +108,7 @@ class Runner:
             self._last_settle = now
             try:
                 with SessionLocal() as db:
-                    summary["ci_results"] = test_selector.settle(db, self.gh, now)
+                    summary["ci_results"] = suite_selector.settle(db, self.gh, now)
                     db.commit()
             except GitHubError as err:
                 summary["errors"] += 1
@@ -168,7 +168,7 @@ class Runner:
         approver = self._request_simulated_approval(db, pr, tier)
         approvals = Approvals()  # a new commit starts with nothing signed off
         gate = evaluate(self.policy, tier, ok=assessment.ok, approvals=approvals, mode=self.mode)
-        selection = test_selector.recommend(
+        selection = suite_selector.recommend(
             db,
             pr,
             sha,
@@ -336,10 +336,10 @@ class Runner:
 
     def _retest(self, db, pr, sha, tier, ok, body, now) -> str:
         """A new test recommendation when a person has changed the tier since the last one."""
-        latest = test_selector.latest_recommendation(db, pr, sha)
+        latest = suite_selector.latest_recommendation(db, pr, sha)
         if latest is None or latest.tier == tier:
             return body
-        selection = test_selector.recommend(
+        selection = suite_selector.recommend(
             db,
             pr,
             sha,

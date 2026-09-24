@@ -26,7 +26,7 @@ def setup(mode, *outcomes, files=LEADS, adjustment=0, pr=7, sha="sha1"):
 
 
 def decisions(db):
-    """Every audit row except the test selector's (tests/test_test_select.py covers those)."""
+    """Every audit row except the test selector's (tests/test_suite_select.py covers those)."""
     return list(
         db.scalars(
             select(AgentDecision)

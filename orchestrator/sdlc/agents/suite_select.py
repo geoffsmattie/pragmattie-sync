@@ -1,7 +1,7 @@
 """The test selector: which CI jobs a PR would need, and which of them look flaky.
 
 Recommendation only (decided 2026-09-24). CI still runs every job on every PR; the selector says
-what it would have run, and sdlc/test_selector.py later reads the real CI result for that commit
+what it would have run, and sdlc/suite_selector.py later reads the real CI result for that commit
 to record whether a skipped job would have caught a failure. That record is its track record.
 
 No Claude call: the choice is plain rules, so it costs nothing, repeats exactly in a demo and

@@ -52,3 +52,15 @@ def test_modules_touched_counts_distinct_modules_and_is_at_least_one():
 def test_infer_module_is_shared_with_the_collector():
     assert infer_module(["orchestrator/sdlc/api.py"]) == "orchestrator"
     assert infer_module(["README.md"]) == "platform"
+
+
+def test_no_source_module_looks_like_a_test_file():
+    """The risk score and the test selector read `test_*.py` as a test. A source module named
+    that way would be miscounted as tests (it happened once: sdlc/test_selector.py)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for app in ("sdlc", "alembic"):
+        for path in (root / app).rglob("*.py"):
+            relative = f"orchestrator/{path.relative_to(root).as_posix()}"
+            assert not is_test_file(relative), relative

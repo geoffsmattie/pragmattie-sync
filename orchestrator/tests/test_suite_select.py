@@ -2,9 +2,9 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
-from sdlc import test_selector
+from sdlc import suite_selector
 from sdlc.agents.llm import StructuredLLM
-from sdlc.agents.test_select import (
+from sdlc.agents.suite_select import (
     CI_SUITES,
     TESTS_END,
     TESTS_START,
@@ -206,9 +206,9 @@ def test_a_skipped_job_that_failed_is_a_miss_and_a_flaky_one_is_not(db):
     assert result.status == "missed" and result.output["missed"] == ["api"]
     assert result.output["results"]["orchestrator"]["flaky"] is True
 
-    report = test_selector.report(db)
+    report = suite_selector.report(db)
     assert report["missed"] == [(7, "api")] and report["flaky_reruns"] == 1
-    text = test_selector.describe(report)
+    text = suite_selector.describe(report)
     assert "misses): 1" in text and "1 commit with CI results" in text
 
 
@@ -217,11 +217,11 @@ def test_a_failure_in_a_selected_job_counts_as_caught(db):
     runner.poll_once(NOW)
     gh.ci("sha1", all_pass(web=["failure"]))
     runner.poll_once(NOW + SETTLE_EVERY)
-    assert test_selector.report(db)["caught"] == 1
+    assert suite_selector.report(db)["caught"] == 1
 
 
 def test_the_report_with_nothing_settled():
-    assert "No commits" in test_selector.describe(
+    assert "No commits" in suite_selector.describe(
         {"commits": 0, "jobs_skipped": 0, "jobs_run": 0, "missed": [], "caught": 0}
     )
 
