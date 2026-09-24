@@ -326,12 +326,28 @@ Open items:
     email sync and webhooks read as features and JSON logging as a chore.
   - **Decision (Geoff, 2026-09-23): accept and record.** Type stays failing at 82%; the 90% bar is
     not lowered and the 40 labels are not changed to match the agent. The type label never gates
-    anything, so triage keeps running in shadow on `triage-v2`. This set is now spent for tuning:
+    anything, so triage kept running in shadow on `triage-v2`. This set is now spent for tuning:
     no further prompt changes are graded against it.
-  - **TODO (`triage-v3`):** Geoff puts the rule he actually labels by into words (his notes point
-    at difficulty, and integrations counted as chores even when users see them). v3 is graded
-    only on a **new, blind-labelled holdout set** of about 15–20 issues, not on these 40, with the
-    same bars fixed beforehand.
+  - **`triage-v3` (2026-09-24)** says who counts as a user per part of the product (CRM modules:
+    reps, managers, customer admins, so API mechanics are chores; orchestrator: the engineering
+    team, through what it shows them). Graded only on a **holdout set**: 20 invented issues
+    (#9001–#9020, `eval/holdout_issues.json`) that Geoff labelled blind on 2026-09-24
+    (`eval/triage_holdout_set.json`, sheet https://claude.ai/artifact/8Mk6FexGt8SLbkF7u8JoPK),
+    same bars. `python -m sdlc.eval --set holdout --fresh --yes`; its trial rows are recorded as
+    `synthetic`. **Result: module 90% pass, type 75% fail, points within one step 80% pass**
+    (about 5¢). Type misses: #9006 (table move) and #9020 (token totals) Geoff feature / agent
+    chore; #9015 (webhook retries) chore / feature; #9013 (API rate limit) and #9018 (key
+    rotation) Geoff bug / agent feature or chore. The written rule and the labels still diverge
+    (missing capability labelled as a bug; integrations as chores). At 20 issues each miss is 5
+    points, so the two sets' type scores aren't directly comparable.
+  - **Decision (Geoff, 2026-09-24): accept and record, again.** Type stays failing; the bar and
+    labels stay as they are. Triage runs in shadow on `triage-v3`. The holdout set is now spent
+    too. Type gates nothing on real issues (it's shown in comments, examples and planner context
+    only), and a human correction sticks.
+  - **If type is reopened:** first measure Geoff's own consistency (re-label ~15 of the 60 issues
+    blind, shuffled, and compare with his earlier labels). At ~95% self-agreement, write the rule
+    down and grade a `triage-v4` on a fresh holdout; at ~80%, the 90% bar is above what the labels
+    support, and that is the finding to record.
 - **TODO:** what "selected suites" means (depends on the Phase 6 test-selector agent) and what
   the "manual QA" step for T3 consists of.
 - One history is a noisy judge: with about 14 incident PRs, the top decile caught 27%–86% of them
