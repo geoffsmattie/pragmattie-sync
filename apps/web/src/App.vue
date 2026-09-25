@@ -11,6 +11,7 @@ const nav = [
   { title: 'Delivery board', icon: 'mdi-kanban', to: '/board' },
   { title: 'Delivery forecast', icon: 'mdi-calendar-clock', to: '/delivery' },
   { title: 'Engineering signals', icon: 'mdi-pulse', to: '/engineering' },
+  { title: 'Prediction accuracy', icon: 'mdi-bullseye-arrow', to: '/accuracy' },
   { title: 'Decision log', icon: 'mdi-format-list-checks', to: '/decisions' },
 ]
 </script>

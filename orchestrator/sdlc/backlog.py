@@ -23,7 +23,11 @@ LABEL_COLORS = {
     "points": "C5CAD1",  # grey
     "epic": "6FBAC1",  # light teal
 }
-EXTRA_LABELS = {"caused-incident": ("B60205", "This PR caused a production incident")}
+EXTRA_LABELS = {
+    "caused-incident": ("B60205", "This PR caused a production incident"),
+    "incident": ("D93F0B", "A production incident: the release gate holds releases touching it"),
+    "demo": ("D4C5F9", "Made during a demo: the demo reset cleans it up"),
+}
 
 
 def load_backlog(path: Path = BACKLOG) -> list[dict]:

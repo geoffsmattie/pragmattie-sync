@@ -6,6 +6,7 @@
   reset     Put the demo back to a clean start: the CRM's demo data reseeded, the simulated
             engineering history regenerated for today, and GitHub back to the recorded baseline
             (demo issues closed, demo PRs closed with their branches and agent comments removed).
+            Demo items are the ones labelled `demo` or on a `demo-` branch; real work is kept.
             A dry run unless you add -Apply. The agent loop is paused while it runs.
   check     The pre-demo checklist: containers, both APIs, the web app, the data, today's
             forecasts, GitHub access, no leftovers from a previous demo, ORCHESTRATOR_MODE.

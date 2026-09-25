@@ -30,7 +30,7 @@ class Repo:
         self.prs = {3: {"state": "closed", "merged": True, "ref": "phase-4-agents", "labels": []}}
         self.comments: dict[int, list[dict]] = {}
         self.branches = {"main", "phase-4-agents"}
-        self.deployments: dict[int, str] = {}  # id -> state
+        self.deployments: dict[int, dict] = {}  # id -> {"sha", "state"}
         self.writes: list[tuple[str, str]] = []
 
     def client(self):
@@ -48,15 +48,15 @@ class Repo:
             return httpx.Response(
                 200,
                 json=[
-                    {"id": i, "sha": "abc1234def", "environment": "production"}
-                    for i in sorted(self.deployments)
+                    {"id": i, "sha": d["sha"], "environment": "production"}
+                    for i, d in sorted(self.deployments.items())
                 ],
             )
         if method == "POST" and (m := re.fullmatch(rf"{base}/deployments/(\d+)/statuses", path)):
-            self.deployments[int(m[1])] = body["state"]
+            self.deployments[int(m[1])]["state"] = body["state"]
             return httpx.Response(201, json={})
         if method == "DELETE" and (m := re.fullmatch(rf"{base}/deployments/(\d+)", path)):
-            assert self.deployments.pop(int(m[1])) == "inactive"  # GitHub's rule
+            assert self.deployments.pop(int(m[1]))["state"] == "inactive"  # GitHub's rule
             return httpx.Response(204)
         if path == f"{base}/branches":
             return httpx.Response(200, json=[{"name": b} for b in sorted(self.branches)])
@@ -83,6 +83,7 @@ class Repo:
                         "state": p["state"],
                         "title": f"PR {n}",
                         "merged_at": "2026-09-24T10:00:00Z" if p["merged"] else None,
+                        "merge_commit_sha": f"merge-{n}" if p["merged"] else None,
                         "labels": [{"name": x} for x in p["labels"]],
                         "head": {"ref": p["ref"], "repo": {"full_name": REPO}},
                     }
@@ -118,7 +119,11 @@ class Repo:
 def after_a_demo(repo: Repo) -> dict:
     """Baseline the clean repo, then play out a demo on it."""
     baseline = snapshot(repo.client())
-    repo.issues[46] = {"state": "open", "labels": ["module:leads"], "title": "Vague live issue"}
+    repo.issues[46] = {
+        "state": "open",
+        "labels": ["module:leads", "demo"],
+        "title": "Vague live issue",
+    }
     repo.issues[7]["state"] = "closed"  # a backlog issue closed during the demo
     repo.issues[6]["labels"] = ["module:platform", "type:feature", "needs-info"]
     repo.prs[47] = {"state": "open", "merged": False, "ref": "demo-copy-fix", "labels": ["tier:T0"]}
@@ -128,8 +133,18 @@ def after_a_demo(repo: Repo) -> dict:
         {"id": 1, "body": f"{RISK}\n## Risk review: T0"},
         {"id": 2, "body": "Geoff: looks good"},
     ]
-    repo.issues[49] = {"state": "open", "labels": ["incident", "module:pipeline"], "title": "Down"}
-    repo.deployments[501] = "success"  # the deploy workflow's, during the demo
+    repo.issues[49] = {
+        "state": "open",
+        "labels": ["incident", "module:pipeline", "demo"],
+        "title": "Down",
+    }
+    repo.deployments[501] = {"sha": "merge-48", "state": "success"}  # the demo PR's release
+    # Real development in the same weeks: unmarked, so the reset keeps all of it.
+    repo.issues[50] = {"state": "open", "labels": ["module:platform"], "title": "Real bug"}
+    repo.prs[51] = {"state": "closed", "merged": True, "ref": "phase-6-accuracy", "labels": []}
+    repo.prs[52] = {"state": "open", "merged": False, "ref": "phase-6-more", "labels": []}
+    repo.branches |= {"phase-6-accuracy", "phase-6-more"}
+    repo.deployments[502] = {"sha": "merge-51", "state": "success"}
     return baseline
 
 
@@ -146,18 +161,35 @@ def test_a_reset_undoes_the_demo_and_never_touches_the_baseline(tmp_path):
 
     assert repo.issues[46]["state"] == "closed"  # opened live: closed (can't be deleted)
     # A demo incident is closed and stops being an incident; the demo's deployment is deleted.
-    assert (repo.issues[49]["state"], repo.issues[49]["labels"]) == ("closed", ["module:pipeline"])
-    assert repo.deployments == {}
+    assert (repo.issues[49]["state"], repo.issues[49]["labels"]) == (
+        "closed",
+        ["module:pipeline", "demo"],
+    )
+    # Real work is never touched: its issue, PRs, branches and release all stay.
+    assert repo.issues[50]["state"] == "open"
+    assert repo.prs[52]["state"] == "open"
+    assert list(repo.deployments) == [502]
+    assert {"phase-6-accuracy", "phase-6-more"} <= repo.branches
+    assert (p.real_issues, sorted(p.real_prs)) == ([50], [51, 52])
+    assert any("Kept as real work" in x for x in p.left_behind)
     assert repo.issues[7]["state"] == "open"  # the backlog is back as it was
     assert repo.issues[6]["labels"] == ["module:leads", "type:feature"]
     assert repo.prs[47]["state"] == "closed" and repo.prs[47]["labels"] == []
     assert [c["id"] for c in repo.comments[47]] == [2]  # a person's comment stays
     # The open demo PR's branch goes; the merged one's too (it was the demo's); "scratch" has no PR.
-    assert repo.branches == {"main", "phase-4-agents", "scratch"}
+    assert repo.branches == {
+        "main",
+        "phase-4-agents",
+        "scratch",
+        "phase-6-accuracy",
+        "phase-6-more",
+    }
     assert "phase-4-agents" in repo.branches and "main" in repo.branches  # baseline untouched
     assert any("PR #48 was merged" in x for x in p.left_behind)
     assert any("scratch" in x and "no PR" in x for x in p.left_behind)
     assert not any("/pulls/3" in path or "phase-4-agents" in path for _, path in repo.writes)
+    real = ("/issues/50", "/pulls/51", "/pulls/52", "/issues/52", "phase-6", "deployments/502")
+    assert not any(r in path for _, path in repo.writes for r in real)
 
     assert plan(repo.client(), baseline).actions == []  # a second reset has nothing to do
 

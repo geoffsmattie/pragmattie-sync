@@ -6,19 +6,25 @@ it was" isn't possible; this gets as close as the API allows, and says what it l
 
 The baseline is a snapshot of the repository at a clean moment (which issues and PRs exist, each
 issue's state and labels, which branches exist), recorded once with `baseline` and kept in
-orchestrator/.demo/baseline.json (not committed; it describes one person's repository). Anything
-numbered after it is demo residue. Nothing that was in the baseline is ever closed or deleted,
-and `main` and any branch that existed at the baseline are never touched.
+orchestrator/.demo/baseline.json (not committed; it describes one person's repository). Nothing
+that was in the baseline is ever closed or deleted, and `main` and any branch that existed at the
+baseline are never touched.
+
+Demo items are marked, not guessed: an issue or PR labelled `demo`, or a PR from a branch whose
+name starts with `demo-`. Real development in the same repository (new PRs, their risk scores,
+CI results, release verdicts and deploys) is never touched, so its history keeps growing; the
+reset lists what it kept. Only the backlog issues in the baseline are put back as they were
+(agents relabel them during a demo).
 
 The reset:
-  1. GitHub: close issues opened after the baseline (taking the `incident` label off incident
-     reports, so they stop counting as incidents); reopen (or re-close) baseline issues to their
-     baseline state and restore their baseline labels; close PRs opened after the baseline, delete
-     the agents' comments and the `tier:` labels on them, and delete their branches; delete
-     deployments made after the baseline (the deploy workflow's, marked inactive first).
+  1. GitHub: close demo issues (taking the `incident` label off demo incident reports, so they
+     stop counting as incidents); reopen (or re-close) baseline issues to their baseline state and
+     restore their baseline labels; close demo PRs, delete the agents' comments and the `tier:`
+     labels on them, and delete their branches; delete the deployments of demo PRs' merge
+     commits (marked inactive first).
   2. Database: regenerate the simulated history with dates relative to today (which also forgets
      saved forecasts and planner drafts), and forget the audit rows, simulated approvals and gate
-     states about the demo's issues and PRs (release gate verdicts included).
+     states about the demo issues and PRs (release gate verdicts included).
   3. Collect from GitHub again, so the database matches the repository.
   4. Save fresh forecasts, so the delivery forecast page is ready (skipped when
      ORCHESTRATOR_MODE is off).
@@ -44,7 +50,7 @@ from sqlalchemy.orm import Session
 from sdlc.agents.comment import MARKER as RISK_MARKER
 from sdlc.agents.triage_comment import MARKER as TRIAGE_MARKER
 from sdlc.github_client import GitHubClient, GitHubError
-from sdlc.signals.github import INCIDENT_LABEL
+from sdlc.signals.github import INCIDENT_LABEL, labels_of
 from sdlc.tables import (
     AgentDecision,
     Approval,
@@ -57,6 +63,16 @@ from sdlc.tables import (
 )
 
 BASELINE = Path(__file__).resolve().parents[1] / ".demo" / "baseline.json"
+DEMO_LABEL = "demo"
+DEMO_BRANCH_PREFIX = "demo-"
+
+
+def is_demo(item: dict) -> bool:
+    """A demo issue or PR: labelled `demo`, or (a PR) from a `demo-` branch."""
+    ref = (item.get("head") or {}).get("ref", "")
+    return DEMO_LABEL in labels_of(item) or ref.startswith(DEMO_BRANCH_PREFIX)
+
+
 AGENT_MARKERS = (RISK_MARKER, TRIAGE_MARKER)
 
 
@@ -110,6 +126,8 @@ class Plan:
     demo_issues: list[int] = field(default_factory=list)
     demo_prs: list[int] = field(default_factory=list)
     demo_deployments: int = 0
+    real_issues: list[int] = field(default_factory=list)  # new since the baseline, not demo: kept
+    real_prs: list[int] = field(default_factory=list)
 
 
 def plan(gh: GitHubClient, baseline: dict) -> Plan:
@@ -133,6 +151,9 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
         labels = sorted(label["name"] for label in item.get("labels", []))
         was = base_issues.get(str(n))
         if was is None:
+            if not is_demo(item):
+                p.real_issues.append(n)
+                continue
             p.demo_issues.append(n)
             if INCIDENT_LABEL in labels:
                 p.actions.append(
@@ -173,11 +194,18 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
                 )
             )
 
+    demo_merges: set[str] = set()
     for pr in gh.paginate("/repos/{repo}/pulls", state="all"):
         n = pr["number"]
         if n in base_prs:
             continue
+        pr_heads.add(pr["head"]["ref"])  # a branch with a PR, demo or not, isn't an orphan
+        if not is_demo(pr):
+            p.real_prs.append(n)
+            continue
         p.demo_prs.append(n)
+        if pr.get("merged_at") and pr.get("merge_commit_sha"):
+            demo_merges.add(pr["merge_commit_sha"])
         if pr["state"] == "open":
             p.actions.append(
                 Action(
@@ -222,8 +250,8 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
 
     base_deployments = set(baseline.get("deployments", []))  # older baselines: none existed
     for d in gh.paginate("/repos/{repo}/deployments"):
-        if d["id"] in base_deployments:
-            continue
+        if d["id"] in base_deployments or d["sha"] not in demo_merges:
+            continue  # the baseline's, or a real release: kept
         what = f"deployment {d['id']} of {d['sha'][:7]} to {d.get('environment')}"
         p.actions.append(
             Action(
@@ -245,6 +273,11 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
 
     for name in sorted(branches - base_branches - pr_heads - {default}):
         p.left_behind.append(f"Branch {name} is new since the baseline but has no PR: kept.")
+    if p.real_issues or p.real_prs:
+        p.left_behind.append(
+            f"Kept as real work (not marked demo): {len(p.real_issues)} issue(s) and "
+            f"{len(p.real_prs)} PR(s) new since the baseline."
+        )
     if p.demo_issues:
         p.left_behind.append(
             f"{len(p.demo_issues)} issue(s) opened during demos stay on GitHub as closed "
