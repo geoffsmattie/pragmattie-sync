@@ -92,6 +92,8 @@ class FakeGitHub:
         self.fail: set[str] = set()  # any request whose path contains one of these gets a 500
         self.runs: dict[str, list[dict]] = {}  # head sha -> Actions workflow runs
         self.jobs: dict[int, list[dict]] = {}  # run id -> its jobs, every attempt
+        self.deploy_runs: list[dict] = []  # the deploy workflow's runs, newest first
+        self.deployments: list[dict] = []  # {id, sha, environment, statuses: [newest first]}
         self._ids = 1000
 
     # -- test helpers -------------------------------------------------------------------------
@@ -116,6 +118,42 @@ class FakeGitHub:
         self.diffs[number] = "".join(
             f"diff --git a/{f} b/{f}\n--- a/{f}\n+++ b/{f}\n+change\n" for f in self.files[number]
         )
+
+    def merge(self, number, merge_sha, merged_at="2026-09-21T10:00:00Z"):
+        """Merge a PR: it leaves the open list and `merge_sha` becomes its merge commit."""
+        pr = self.prs[number]
+        pr.update(state="closed", merged_at=merged_at, closed_at=merged_at)
+        pr["merge_commit_sha"] = merge_sha
+
+    def open_incident(self, number, module, *, state="open", created="2026-09-21T11:00:00Z"):
+        """An issue labelled as a production incident in `module`."""
+        self.issues[number] = {
+            "number": number,
+            "title": f"{module} is down",
+            "body": "Customers can't load it.",
+            "state": state,
+            "labels": [{"name": "incident"}, {"name": f"module:{module}"}],
+            "user": {"login": "geoff"},
+            "created_at": created,
+            "closed_at": "2026-09-21T12:00:00Z" if state == "closed" else None,
+            "updated_at": created,
+        }
+
+    def deploy_run(self, sha, status="in_progress"):
+        """A run of the deploy workflow on `sha` (newest first, as GitHub lists them)."""
+        self.deploy_runs.insert(0, {"head_sha": sha, "status": status})
+
+    def deployment(self, sha, environment="production", state="success", at="2026-09-21T12:00:00Z"):
+        self._ids += 1
+        self.deployments.append(
+            {
+                "id": self._ids,
+                "sha": sha,
+                "environment": environment,
+                "statuses": [{"state": state, "created_at": at}],
+            }
+        )
+        return self._ids
 
     def push(self, number, sha):
         self.prs[number]["head"]["sha"] = sha
@@ -214,12 +252,47 @@ class FakeGitHub:
             return httpx.Response(500, json={"message": "fake github: boom"})
         base = f"/repos/{REPO}"
 
+        params = request.url.params
         if method == "GET" and path == f"{base}/pulls":
-            return httpx.Response(200, json=[p for p in self.prs.values() if p["state"] == "open"])
-        if method == "GET" and path == f"{base}/issues":
+            want = params.get("state", "open")
             return httpx.Response(
-                200, json=[i for i in self.issues.values() if i["state"] == "open"]
+                200, json=[p for p in self.prs.values() if want == "all" or p["state"] == want]
             )
+        if method == "GET" and path == f"{base}/issues":
+            want = params.get("state", "open")
+            label = params.get("labels")
+            return httpx.Response(
+                200,
+                json=[
+                    i
+                    for i in self.issues.values()
+                    if (want == "all" or i["state"] == want)
+                    and (not label or label in {x["name"] for x in i.get("labels", [])})
+                ],
+            )
+        if method == "GET" and (m := _re.fullmatch(rf"{base}/commits/(\w+)/pulls", path)):
+            return httpx.Response(
+                200, json=[p for p in self.prs.values() if p.get("merge_commit_sha") == m[1]]
+            )
+        if method == "GET" and path == f"{base}/actions/workflows/deploy.yml/runs":
+            return httpx.Response(200, json={"workflow_runs": self.deploy_runs})
+        if method == "GET" and path == f"{base}/deployments":
+            env = params.get("environment")
+            rows = [d for d in self.deployments if not env or d["environment"] == env]
+            return httpx.Response(
+                200, json=[{k: v for k, v in d.items() if k != "statuses"} for d in rows]
+            )
+        if m := _re.fullmatch(rf"{base}/deployments/(\d+)/statuses", path):
+            d = next(d for d in self.deployments if d["id"] == int(m[1]))
+            if method == "POST":
+                d["statuses"].insert(
+                    0, {"state": body["state"], "created_at": "2026-09-22T00:00:00Z"}
+                )
+                return httpx.Response(201, json={})
+            return httpx.Response(200, json=d["statuses"])
+        if method == "DELETE" and (m := _re.fullmatch(rf"{base}/deployments/(\d+)", path)):
+            self.deployments = [d for d in self.deployments if d["id"] != int(m[1])]
+            return httpx.Response(204)
         if method == "GET" and (m := _re.fullmatch(rf"{base}/issues/(\d+)", path)):
             return httpx.Response(200, json=self.issues[int(m[1])])
         if m := _re.fullmatch(rf"{base}/pulls/(\d+)", path):
@@ -227,8 +300,8 @@ class FakeGitHub:
             if "diff" in request.headers.get("accept", ""):
                 return httpx.Response(200, text=self.diffs[n])
             pr = {
-                **self.prs[n],
                 "merged_at": None,
+                **self.prs[n],
                 "changed_files": len(self.files[n]),
                 "additions": 40,
                 "deletions": 10,

@@ -1,11 +1,11 @@
 """Poll GitHub and run the agents. (The demo is local-only, so it polls; no webhooks.)
 
 `run` and `once` drive the PR risk agent (this module, with the test selector's recommendation
-and track record from sdlc/suite_selector.py), the triage agent
-(sdlc/issue_runner.py), the forecaster (sdlc/forecaster.py) and the planner (sdlc/plan_runner.py)
-together, one poll cycle each, in one process — one container for the whole orchestrator, per
-the blueprint's shared ORCHESTRATOR_MODE kill switch. The agents are otherwise independent: see
-each one's module for its own triggers and autonomy rules.
+and track record from sdlc/suite_selector.py), the triage agent (sdlc/issue_runner.py), the
+forecaster (sdlc/forecaster.py), the planner (sdlc/plan_runner.py) and the release gate
+(sdlc/release_runner.py) together, one poll cycle each, in one process — one container for the
+whole orchestrator, per the blueprint's shared ORCHESTRATOR_MODE kill switch. The agents are
+otherwise independent: see each one's module for its own triggers and autonomy rules.
 
 Usage (inside the orchestrator container, or locally with the same .env):
     python -m sdlc.runner run            # poll every agent forever, every POLL_SECONDS
@@ -62,6 +62,7 @@ from sdlc.github_client import GitHubClient, GitHubError
 from sdlc.governance import matches
 from sdlc.issue_runner import IssueRunner
 from sdlc.plan_runner import PlannerRunner
+from sdlc.release_runner import ReleaseRunner
 from sdlc.scoring import compute_features, features_digest, score_features
 from sdlc.signals.github import Collector
 from sdlc.tables import AgentDecision, Approval, PullRequest
@@ -433,6 +434,7 @@ def main(argv: list[str] | None = None) -> None:
             ),
             runner_mode,
         )
+        release = ReleaseRunner(gh, runner.policy, runner_mode)
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
@@ -445,11 +447,13 @@ def main(argv: list[str] | None = None) -> None:
                 "triage": triage_runner.poll_once(),
                 "forecaster": forecaster.poll_once(),
                 "planner": planner.poll_once(),
+                "release_gate": release.poll_once(),
             }
         )
     else:
         log.info(
-            "risk, triage, forecaster and planner agents started in %s mode, polling every %ss",
+            "risk, triage, forecaster, planner and release gate agents started in %s mode, "
+            "polling every %ss",
             runner_mode,
             settings.poll_seconds,
         )
@@ -459,6 +463,7 @@ def main(argv: list[str] | None = None) -> None:
                 ("triage", triage_runner),
                 ("forecaster", forecaster),  # before the planner: it reads the saved forecast
                 ("planner", planner),
+                ("release_gate", release),
             )
             for name, agent in agents:
                 try:

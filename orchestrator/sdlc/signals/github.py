@@ -12,9 +12,17 @@ Label conventions (created by `python -m sdlc.backlog`):
     points:<n>       story-point estimate
     epic:<name>      the epic a story belongs to (e.g. epic:AI lead scoring)
     caused-incident  set on a PR after it caused a production incident
+    incident         an issue that reports a production incident (with module:<name> and,
+                     optionally, sev1/sev2/sev3). It is stored as an incident, not as work:
+                     open means ongoing, closed means resolved. The release gate holds a release
+                     that touches the module of an open one.
+
+Deployments come from GitHub's own deployment records (the deploy workflow creates them in the
+release gate's environments); only ones that reached `success` are stored.
 """
 
 import re
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,9 +30,13 @@ from sqlalchemy.orm import Session
 from sdlc.changes import classify_files, infer_module
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError, parse_time
-from sdlc.tables import CIRun, Engineer, Issue, PullRequest
+from sdlc.tables import CIRun, Deployment, Engineer, Incident, Issue, PullRequest
 
 SOURCE = "github"
+INCIDENT_LABEL = "incident"
+DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml"
+SEVERITIES = ("sev1", "sev2", "sev3")
+INCIDENT_AFTER_DEPLOY = timedelta(hours=24)  # an incident this soon after a deploy is its fault
 
 # Map CI job names (from .github/workflows/ci.yml) to suite names used in the metrics.
 JOB_SUITES = {
@@ -86,6 +98,8 @@ class Collector:
         for item in self.gh.paginate("/repos/{repo}/issues", state="all"):
             if "pull_request" in item:  # the issues endpoint also returns PRs
                 continue
+            if is_incident(item):
+                continue  # an incident, not work: see collect_incidents
             labels = labels_of(item)
             assignee = self.engineer(item.get("assignee"))
             points = labels.get("points")
@@ -163,6 +177,7 @@ class Collector:
             state="merged" if merged_at else item["state"],
             created_at=created,
             merged_at=merged_at,
+            merge_commit_sha=detail.get("merge_commit_sha") if merged_at else None,
             closed_at=parse_time(item.get("closed_at")),
             caused_incident="caused-incident" in labels,
             reverted=item["title"].lower().startswith("revert"),
@@ -171,6 +186,8 @@ class Collector:
     def collect_ci_runs(self) -> int:
         count = 0
         for run in self.gh.paginate("/repos/{repo}/actions/runs", key="workflow_runs"):
+            if run.get("path", "").endswith(DEPLOY_WORKFLOW_PATH):
+                continue  # deploys, not tests: the release gate reads those
             pr = None
             if run.get("pull_requests"):
                 pr = self.db.scalar(
@@ -213,23 +230,111 @@ class Collector:
                 count += 1
         return count
 
-    def run(self) -> dict[str, int]:
+    def collect_deployments(self, environments: tuple[str, ...]) -> int:
+        """GitHub deployments to these environments that succeeded, as Deployment rows.
+
+        Rows for deployments GitHub no longer has (the demo reset deletes them) are removed."""
+        seen = set()
+        for env in environments:
+            for item in self.gh.paginate("/repos/{repo}/deployments", environment=env):
+                external_id = f"deployment-{item['id']}"
+                seen.add(external_id)
+                known = self.db.scalar(
+                    select(Deployment).where(
+                        Deployment.source == SOURCE, Deployment.external_id == external_id
+                    )
+                )
+                if known:
+                    continue  # stored once it succeeded; that never changes
+                statuses = self.gh.get(f"/repos/{{repo}}/deployments/{item['id']}/statuses")
+                done = next((st for st in statuses if st.get("state") == "success"), None)
+                if done:
+                    self._upsert(
+                        Deployment,
+                        external_id,
+                        version=item["sha"][:7],
+                        sha=item["sha"],
+                        deployed_at=parse_time(done["created_at"]),
+                        pr_count=0,
+                        status="success",
+                    )
+        gone = [
+            d
+            for d in self.db.scalars(select(Deployment).where(Deployment.source == SOURCE))
+            if d.external_id not in seen
+        ]
+        for d in gone:
+            for incident in self.db.scalars(select(Incident).where(Incident.deployment_id == d.id)):
+                incident.deployment_id = None
+            self.db.delete(d)
+        self.db.flush()
+        return len(seen)
+
+    def collect_incidents(self) -> int:
+        """Issues labelled `incident`, as Incident rows (open = ongoing, closed = resolved).
+
+        An incident opened within a day of a real deploy is counted against that deploy, which is
+        what the release gate's failure rate reads."""
+        count = 0
+        deploys = sorted(
+            self.db.scalars(
+                select(Deployment).where(
+                    Deployment.source == SOURCE, Deployment.status == "success"
+                )
+            ),
+            key=lambda d: d.deployed_at,
+        )
+        for item in self.gh.paginate("/repos/{repo}/issues", state="all", labels=INCIDENT_LABEL):
+            if "pull_request" in item or not is_incident(item):
+                continue
+            labels = labels_of(item)
+            opened = parse_time(item["created_at"])
+            before = [d for d in deploys if d.deployed_at <= opened]
+            cause = (
+                before[-1]
+                if before and opened - before[-1].deployed_at <= INCIDENT_AFTER_DEPLOY
+                else None
+            )
+            self._upsert(
+                Incident,
+                f"issue-{item['number']}",
+                title=item["title"][:200],
+                severity=next((s for s in SEVERITIES if s in labels), "sev2"),
+                module=labels.get("module"),
+                opened_at=opened,
+                resolved_at=parse_time(item.get("closed_at")),
+                deployment_id=cause.id if cause else None,
+            )
+            count += 1
+        return count
+
+    def run(self, environments: tuple[str, ...] = ()) -> dict[str, int]:
         counts = {
             "issues": self.collect_issues(),
             "pull_requests": self.collect_pull_requests(),
             "ci_jobs": self.collect_ci_runs(),
         }
+        if environments:
+            counts["deployments"] = self.collect_deployments(environments)
+        counts["incidents"] = self.collect_incidents()
         self.db.commit()
         return counts
 
 
+def is_incident(item: dict) -> bool:
+    return INCIDENT_LABEL in labels_of(item)
+
+
 def main() -> None:
+    from sdlc.tiers import load_policy
+
     try:
         client = GitHubClient()
     except GitHubError as err:
         raise SystemExit(str(err)) from err
+    rules = load_policy().release
     with SessionLocal() as db:
-        counts = Collector(db, client).run()
+        counts = Collector(db, client).run((rules.environment, rules.signoff_environment))
     print(f"Collected from {client.repo}: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
 
 

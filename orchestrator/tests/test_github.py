@@ -113,7 +113,7 @@ def client():
 
 def test_collects_issues_prs_and_ci_jobs(db, client):
     counts = Collector(db, client).run()
-    assert counts == {"issues": 1, "pull_requests": 1, "ci_jobs": 3}
+    assert counts == {"issues": 1, "pull_requests": 1, "ci_jobs": 3, "incidents": 0}
 
     issue = db.scalar(select(Issue).where(Issue.source == "github"))
     assert (issue.module, issue.estimate_points, issue.actual_days) == ("pipeline", 5, 2.0)

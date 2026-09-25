@@ -11,12 +11,14 @@ numbered after it is demo residue. Nothing that was in the baseline is ever clos
 and `main` and any branch that existed at the baseline are never touched.
 
 The reset:
-  1. GitHub: close issues opened after the baseline; reopen (or re-close) baseline issues to their
+  1. GitHub: close issues opened after the baseline (taking the `incident` label off incident
+     reports, so they stop counting as incidents); reopen (or re-close) baseline issues to their
      baseline state and restore their baseline labels; close PRs opened after the baseline, delete
-     the agents' comments and the `tier:` labels on them, and delete their branches.
+     the agents' comments and the `tier:` labels on them, and delete their branches; delete
+     deployments made after the baseline (the deploy workflow's, marked inactive first).
   2. Database: regenerate the simulated history with dates relative to today (which also forgets
      saved forecasts and planner drafts), and forget the audit rows, simulated approvals and gate
-     states about the demo's issues and PRs.
+     states about the demo's issues and PRs (release gate verdicts included).
   3. Collect from GitHub again, so the database matches the repository.
   4. Save fresh forecasts, so the delivery forecast page is ready (skipped when
      ORCHESTRATOR_MODE is off).
@@ -42,11 +44,13 @@ from sqlalchemy.orm import Session
 from sdlc.agents.comment import MARKER as RISK_MARKER
 from sdlc.agents.triage_comment import MARKER as TRIAGE_MARKER
 from sdlc.github_client import GitHubClient, GitHubError
+from sdlc.signals.github import INCIDENT_LABEL
 from sdlc.tables import (
     AgentDecision,
     Approval,
     Forecast,
     GateStatus,
+    Incident,
     Issue,
     PullRequest,
     Sprint,
@@ -75,6 +79,7 @@ def snapshot(gh: GitHubClient) -> dict:
         "issues": issues,
         "prs": sorted(prs),
         "branches": sorted(b["name"] for b in gh.paginate("/repos/{repo}/branches")),
+        "deployments": sorted(d["id"] for d in gh.paginate("/repos/{repo}/deployments")),
     }
 
 
@@ -93,7 +98,7 @@ def load_baseline(path: Path = BASELINE) -> dict | None:
 @dataclass(frozen=True)
 class Action:
     what: str  # plain English, for the dry run and the summary
-    method: str  # PATCH | PUT | DELETE
+    method: str  # PATCH | PUT | POST | DELETE
     path: str
     body: dict | None = None
 
@@ -104,6 +109,7 @@ class Plan:
     left_behind: list[str] = field(default_factory=list)
     demo_issues: list[int] = field(default_factory=list)
     demo_prs: list[int] = field(default_factory=list)
+    demo_deployments: int = 0
 
 
 def plan(gh: GitHubClient, baseline: dict) -> Plan:
@@ -128,6 +134,14 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
         was = base_issues.get(str(n))
         if was is None:
             p.demo_issues.append(n)
+            if INCIDENT_LABEL in labels:
+                p.actions.append(
+                    Action(
+                        f"Take the incident label off issue #{n} (a demo incident)",
+                        "DELETE",
+                        f"/repos/{{repo}}/issues/{n}/labels/{INCIDENT_LABEL}",
+                    )
+                )
             if item["state"] == "open":
                 p.actions.append(
                     Action(
@@ -206,6 +220,29 @@ def plan(gh: GitHubClient, baseline: dict) -> Plan:
                 )
             )
 
+    base_deployments = set(baseline.get("deployments", []))  # older baselines: none existed
+    for d in gh.paginate("/repos/{repo}/deployments"):
+        if d["id"] in base_deployments:
+            continue
+        what = f"deployment {d['id']} of {d['sha'][:7]} to {d.get('environment')}"
+        p.actions.append(
+            Action(
+                f"Mark {what} inactive",
+                "POST",
+                f"/repos/{{repo}}/deployments/{d['id']}/statuses",
+                {"state": "inactive"},
+            )
+        )
+        p.actions.append(
+            Action(f"Delete {what}", "DELETE", f"/repos/{{repo}}/deployments/{d['id']}")
+        )
+        p.demo_deployments += 1
+    if p.demo_deployments:
+        p.left_behind.append(
+            "release-gate statuses stay on the demo's commits in main (GitHub can't delete a "
+            "commit status), as do the deploy workflow's run logs."
+        )
+
     for name in sorted(branches - base_branches - pr_heads - {default}):
         p.left_behind.append(f"Branch {name} is new since the baseline but has no PR: kept.")
     if p.demo_issues:
@@ -223,6 +260,8 @@ def apply_plan(gh: GitHubClient, p: Plan) -> tuple[list[str], list[str]]:
         try:
             if a.method == "PATCH":
                 gh.patch(a.path, a.body or {})
+            elif a.method == "POST":
+                gh.post(a.path, a.body or {})
             elif a.method == "PUT":
                 gh.put(a.path, a.body or {})
             else:
@@ -252,10 +291,16 @@ def reset_database(db: Session, demo_issues: list[int], demo_prs: list[int]) -> 
         forgotten = db.execute(
             delete(AgentDecision).where(
                 AgentDecision.subject_source == "github",
-                AgentDecision.subject_type.in_(["issue", "pr"]),
+                AgentDecision.subject_type.in_(["issue", "pr", "release"]),
                 AgentDecision.subject_id.in_(numbers),
             )
         ).rowcount
+        db.execute(
+            delete(Incident).where(
+                Incident.source == "github",
+                Incident.external_id.in_([f"issue-{n}" for n in demo_issues] or ["-"]),
+            )
+        )
         db.commit()
     synth_reset(db)
     counts = build(db)
@@ -290,7 +335,8 @@ def run(gh: GitHubClient, baseline: dict, *, apply: bool, mode: str) -> str:
     lines = [
         f"Baseline recorded {baseline['recorded_at']}: {len(baseline['issues'])} issues, "
         f"{len(baseline['prs'])} PRs, {len(baseline['branches'])} branches.",
-        f"Since then: {len(p.demo_issues)} demo issue(s), {len(p.demo_prs)} demo PR(s).",
+        f"Since then: {len(p.demo_issues)} demo issue(s), {len(p.demo_prs)} demo PR(s), "
+        f"{p.demo_deployments} deployment(s).",
         "",
         "GitHub:" if p.actions else "GitHub: nothing to undo.",
         *[f"  - {a.what}" for a in p.actions],
@@ -308,8 +354,10 @@ def run(gh: GitHubClient, baseline: dict, *, apply: bool, mode: str) -> str:
         with SessionLocal() as db:
             reset = reset_database(db, p.demo_issues, p.demo_prs)
             from sdlc.signals.github import Collector
+            from sdlc.tiers import load_policy
 
-            collected = Collector(db, gh).run()
+            rules = load_policy().release
+            collected = Collector(db, gh).run((rules.environment, rules.signoff_environment))
             forecasts = "skipped (ORCHESTRATOR_MODE is off)"
             if mode != "off":
                 from sdlc.forecaster import ForecastRunner

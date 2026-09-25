@@ -6,7 +6,9 @@ by scripts/demo.ps1 from the host (the web dev server refuses requests from insi
 
 Checks: the database and both migration histories, both APIs, the CRM's demo data, the simulated
 history (a sprint in progress today), today's saved forecasts, GitHub access, the repository
-matching the demo baseline (no residue from a previous demo), and ORCHESTRATOR_MODE.
+matching the demo baseline (no residue from a previous demo), the release gate's GitHub setup (the
+deploy workflow, both environments, the sign-off environment's reviewer, the token's Deployments
+access), and ORCHESTRATOR_MODE (enforce, so the release gate really holds a deploy).
 `--smoke --yes` also scores one real PR and triages one real issue end to end with Claude (about
 5 cents; recorded as trial audit rows, nothing written to GitHub).
 
@@ -147,6 +149,7 @@ def _github() -> list[Check]:
                 "none recorded: with the repo clean, run `python -m sdlc.demo_reset baseline`.",
             )
         ]
+    out += _release_setup(gh)
     p = plan(gh, baseline)
     if p.actions:
         return out + [
@@ -160,6 +163,61 @@ def _github() -> list[Check]:
     return out + [Check("Clean start", "PASS", "the repository matches the demo baseline")]
 
 
+def _release_setup(gh) -> list[Check]:
+    """What the no-op deploy and its release gate need on GitHub. Setting it up: CLAUDE.md."""
+    from sdlc.github_client import GitHubError
+    from sdlc.release_runner import DEPLOY_WORKFLOW
+    from sdlc.tiers import load_policy
+
+    rules = load_policy().release
+    out = []
+    try:
+        gh.get(f"/repos/{{repo}}/actions/workflows/{DEPLOY_WORKFLOW}")
+        out.append(Check("Deploy workflow", "PASS", f"{DEPLOY_WORKFLOW} is on the default branch"))
+    except GitHubError as err:
+        out.append(Check("Deploy workflow", "FAIL", f"{err}. Merge {DEPLOY_WORKFLOW} into main."))
+    for name, needs_reviewer in ((rules.environment, False), (rules.signoff_environment, True)):
+        label = f"Environment {name}"
+        try:
+            env = gh.get(f"/repos/{{repo}}/environments/{name}")
+        except GitHubError as err:
+            fix = "create it in Settings > Environments" + (
+                ", with yourself as required reviewer" if needs_reviewer else ""
+            )
+            out.append(Check(label, "FAIL", f"{err}: {fix}."))
+            continue
+        reviewers = [
+            r for r in env.get("protection_rules", []) if r.get("type") == "required_reviewers"
+        ]
+        if needs_reviewer and not reviewers:
+            out.append(
+                Check(
+                    label,
+                    "FAIL",
+                    "has no required reviewer, so T3 deploys won't wait for your approval: "
+                    "add yourself under Deployment protection rules.",
+                )
+            )
+        else:
+            out.append(Check(label, "PASS", "required reviewer set" if reviewers else "exists"))
+    try:
+        gh.get("/repos/{repo}/deployments", per_page=1)
+        out.append(
+            Check(
+                "Token: deployments",
+                "PASS",
+                "can read deployments (the reset also needs write, which can't be tested safely)",
+            )
+        )
+    except GitHubError as err:
+        out.append(
+            Check(
+                "Token: deployments", "FAIL", f"{err}: give the token Deployments read and write."
+            )
+        )
+    return out
+
+
 def _mode(mode: str) -> Check:
     if mode == "off":
         return Check(
@@ -167,11 +225,19 @@ def _mode(mode: str) -> Check:
             "FAIL",
             "off: the agents won't react during the demo. Set it to shadow in .env.",
         )
-    if mode == "enforce":
+    if mode == "shadow":
         return Check(
-            "ORCHESTRATOR_MODE", "WARN", "enforce: risk-gate will really block PRs in the demo."
+            "ORCHESTRATOR_MODE",
+            "WARN",
+            "shadow: the release gate will only say what it would do and never hold a deploy. "
+            "Set enforce in .env for the demo, and shadow again afterwards.",
         )
-    return Check("ORCHESTRATOR_MODE", "PASS", mode)
+    return Check(
+        "ORCHESTRATOR_MODE",
+        "PASS",
+        "enforce: the release gate holds deploys and risk-gate shows its real state (it isn't a "
+        "required check, so it never blocks a merge). Set shadow again after the demo.",
+    )
 
 
 def _smoke() -> list[Check]:

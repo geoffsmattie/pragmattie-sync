@@ -9,7 +9,8 @@ Columns, most-advanced wins, in order:
   In progress  an open PR is linked (or, for a synthetic card, additionally in the current sprint)
   In review    the PR has a risk score and the gate isn't blocking it
   Gated        the risk-gate is pending or failing, or a fallback status shows
-  Merged       merged, no deployment has picked it up yet
+  Merged       merged, no deployment has picked it up yet (the release gate's latest verdict on
+               the release it is in shows on the card: held, blocked or releasing)
   Production   in a deployment (a rolled-back one keeps the card here, flagged)
 
 A card is keyed by its issue when one exists, otherwise by its PR alone (not every PR traces
@@ -19,12 +20,13 @@ the card's column.
 Two data-model facts drive some non-obvious derivations here, both explained where used:
   - Real issues never carry a sprint (nothing assigns one), so "In progress" only requires an
     open PR for real cards; synthetic cards keep the stricter current-sprint rule too.
-  - There is no hosted deploy for this project, so a real PR can reach Merged but never
-    Production; Production is populated by simulated history only. See CLAUDE.md.
+  - Real deploys are the no-op deploy workflow's GitHub deployments (see
+    sdlc/release_runner.py): a real PR reaches Production once a deploy of its merge commit, or
+    of a later one, succeeds. Nothing is hosted; see CLAUDE.md.
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from statistics import median
 
@@ -32,6 +34,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sdlc.agents.pr_risk import AGENT as PR_RISK_AGENT
+from sdlc.agents.release_gate import AGENT as RELEASE_AGENT
 from sdlc.agents.triage import AGENT as TRIAGE_AGENT
 from sdlc.audit import TRIAL
 from sdlc.tables import (
@@ -97,6 +100,7 @@ class Card:
     rolled_back: bool = False
     decisions: tuple[Decision, ...] = ()
     transitions: tuple[tuple[str, datetime], ...] = ()  # (column, first known time), for replay
+    release: dict | None = None  # merged cards: the release gate's latest verdict on its release
 
 
 @dataclass(frozen=True)
@@ -130,23 +134,59 @@ def _first_ok(rows: list[AgentDecision] | None) -> AgentDecision | None:
     return next((d for d in rows if d.status == "ok"), None)
 
 
+def _deployments(db: Session) -> dict[str, list[tuple[Deployment, datetime]]]:
+    """Each source's deployments, with the last merge each one shipped (see _pr_deployment)."""
+    from sdlc.release_runner import shipped_through
+
+    out: dict[str, list[tuple[Deployment, datetime]]] = defaultdict(list)
+    for d in db.scalars(select(Deployment)):
+        out[d.source].append((d, shipped_through(db, d)))
+    return out
+
+
 def _pr_deployment(
-    pr: PullRequest, deployments_by_source: dict[str, list[Deployment]]
+    pr: PullRequest, deployments_by_source: dict[str, list[tuple[Deployment, datetime]]]
 ) -> Deployment | None:
     """Which deployment shipped this merged PR, derived without a stored PR<->Deployment link.
 
-    The synthetic generator deploys strictly in date order and never skips a pending merged PR
-    (see sdlc/synth.py's _deploy): every deploy clears everything merged since the last one, in
-    one batch, and batches never reorder or overlap. So the earliest same-source deployment at or
-    after the PR's merge time is, deterministically, the one that shipped it. A PR merged after
-    the last deploy correctly has none yet, and stays in Merged.
+    A deploy ships `main` as it stood: every PR merged up to the commit it deployed (for a real
+    deploy, the merge of that commit; for a simulated one, everything merged before it went out,
+    since the generator releases the whole backlog at once or holds all of it). So the earliest
+    deployment whose last shipped merge is at or after this PR's merge is the one that shipped
+    it. A PR merged after the last deploy correctly has none yet, and stays in Merged.
     """
     if pr.merged_at is None:
         return None
     candidates = [
-        d for d in deployments_by_source.get(pr.source, []) if d.deployed_at >= pr.merged_at
+        (d, through)
+        for d, through in deployments_by_source.get(pr.source, [])
+        if through >= pr.merged_at and d.deployed_at >= pr.merged_at
     ]
-    return min(candidates, key=lambda d: d.deployed_at) if candidates else None
+    return min(candidates, key=lambda c: c[0].deployed_at)[0] if candidates else None
+
+
+def _releases_by_pr(db: Session) -> dict[tuple[str, int], dict]:
+    """(source, PR number) -> the release gate's latest verdict on a release containing it."""
+    out: dict[tuple[str, int], dict] = {}
+    rows = db.scalars(
+        select(AgentDecision)
+        .where(AgentDecision.agent == RELEASE_AGENT, AgentDecision.trigger != TRIAL)
+        .order_by(AgentDecision.created_at, AgentDecision.id)
+    )
+    for d in rows:
+        output = d.output or {}
+        entry = {
+            "verdict": output.get("verdict"),
+            "description": (d.action_taken or {}).get("description")
+            or "; ".join(output.get("reasons") or []),
+            "reasons": output.get("reasons") or [],
+            "at": d.created_at.isoformat(),
+            "decision_id": d.id,
+            "tier": d.tier,
+        }
+        for number in output.get("prs") or []:
+            out[(d.subject_source, number)] = entry
+    return out
 
 
 def _owner(
@@ -178,9 +218,7 @@ def build_board(
     triage_decisions = _decisions_by_subject(db, TRIAGE_AGENT)
     risk_decisions = _decisions_by_subject(db, PR_RISK_AGENT)
     gate_by_pr = {g.pull_request_id: g for g in db.scalars(select(GateStatus))}
-    deployments_by_source: dict[str, list[Deployment]] = defaultdict(list)
-    for d in db.scalars(select(Deployment)):
-        deployments_by_source[d.source].append(d)
+    deployments_by_source = _deployments(db)
     current_sprint = _current_sprint(db, now.date())
 
     sprints_by_id = {s.id: s for s in db.scalars(select(Sprint))}
@@ -214,6 +252,14 @@ def build_board(
         )
         if card:
             cards.append(card)
+
+    releases = _releases_by_pr(db)
+    cards = [
+        replace(c, release=releases.get((c.source, c.pr_number)))
+        if c.column == "merged" and c.pr_number
+        else c
+        for c in cards
+    ]
 
     # A real card (which never has a sprint, since nothing assigns one) is never excluded by a
     # sprint filter — real, live-demo work should always be visible regardless of which sprint
@@ -443,6 +489,7 @@ def serialize(board: Board) -> dict:
             "rolled_back": c.rolled_back,
             "decisions": [decision(d) for d in c.decisions],
             "transitions": [[name, at.isoformat()] for name, at in c.transitions],
+            "release": c.release,
         }
 
     return {
