@@ -95,6 +95,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'Planner', value: 'planner' },
             { title: 'Test selector', value: 'test_selector' },
             { title: 'Tier overrides', value: 'tier_override' },
+            { title: 'Release gate', value: 'release_gate' },
           ]"
           label="Agent"
           density="compact"
@@ -111,6 +112,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'Issues', value: 'issue' },
             { title: 'Sprints', value: 'sprint' },
             { title: 'Epics', value: 'epic' },
+            { title: 'Releases', value: 'release' },
           ]"
           label="Subject"
           density="compact"

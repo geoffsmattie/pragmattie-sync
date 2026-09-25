@@ -1,0 +1,86 @@
+# A no-op deploy of main, gated by the orchestrator's release gate. Nothing is hosted: the deploy
+# step only prints what it would ship, but GitHub records a real deployment, so the release gate,
+# the Approve deployment button and the repository's Deployments panel all behave as they would
+# for a real release. To deploy for real, replace the deploy step; the gate stays as it is.
+#
+# How it works: the release gate agent (orchestrator/sdlc/release_runner.py) runs on Geoff's
+# machine, finds this run, and posts a `release-gate` commit status on the commit. The first job
+# waits for that status: success releases, failure stops the deploy, pending keeps waiting (a
+# hold). The status starts with the release's tier ("T3 · ..."); T3 deploys to the sign-off
+# environment, whose required reviewer must approve before the deploy job runs.
+#
+# Needs the environments `production` and `production-signoff` (with a required reviewer) in
+# Settings > Environments. If the local stack isn't running, the gate job waits, then fails.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  statuses: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    name: Release gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      environment: ${{ steps.gate.outputs.environment }}
+      tier: ${{ steps.gate.outputs.tier }}
+    steps:
+      - name: Wait for the release gate's verdict
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          echo "Waiting for the release-gate status on $SHA (the orchestrator posts it)."
+          while true; do
+            line=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/statuses" \
+              --jq '[.[] | select(.context == "release-gate")][0] | "\(.state)|\(.description)"')
+            state=${line%%|*}
+            description=${line#*|}
+            case "$state" in
+              success)
+                tier=${description:0:2}
+                echo "Release gate: $description"
+                echo "tier=$tier" >> "$GITHUB_OUTPUT"
+                if [ "$tier" = "T3" ]; then
+                  echo "environment=production-signoff" >> "$GITHUB_OUTPUT"
+                else
+                  echo "environment=production" >> "$GITHUB_OUTPUT"
+                fi
+                exit 0
+                ;;
+              failure|error)
+                echo "::error::Release gate: $description"
+                exit 1
+                ;;
+              pending)
+                echo "$(date -u +%H:%M:%S) held: $description"
+                ;;
+              *)
+                echo "$(date -u +%H:%M:%S) no verdict yet"
+                ;;
+            esac
+            sleep 20
+          done
+
+  deploy:
+    name: Deploy (no-op)
+    needs: release-gate
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ needs.release-gate.outputs.environment }}
+    steps:
+      - name: Deploy
+        run: |
+          echo "No-op deploy of ${GITHUB_SHA::7} (tier ${{ needs.release-gate.outputs.tier }})."
+          echo "Nothing is hosted: replace this step to deploy for real."

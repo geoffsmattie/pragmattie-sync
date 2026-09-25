@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import { releaseChip } from '../../board'
 import { MODULE_LABELS, TIER_COLORS } from '../../constants'
 
 const props = defineProps({
@@ -14,6 +15,8 @@ const idLabel = computed(() => {
   if (issue) return `#${issue}`
   return `PR ${pr}`
 })
+
+const release = computed(() => releaseChip(props.card))
 
 const ownerInitials = computed(() => {
   const name = props.card.owner
@@ -87,6 +90,16 @@ const ageLabel = computed(() => {
         :title="card.gate_missing.join(', ')"
       >
         {{ card.gate_missing.length }} missing
+      </v-chip>
+      <v-chip
+        v-if="release"
+        size="x-small"
+        density="compact"
+        :color="release.color"
+        variant="tonal"
+        :title="release.title"
+      >
+        {{ release.text }}
       </v-chip>
     </div>
 

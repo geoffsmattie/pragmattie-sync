@@ -14,8 +14,11 @@ here is marked **TODO**, it has not been decided yet — ask Geoff rather than g
   (Geoff's consulting brand). The app footer credits PragMattie Growth Partners; the demo
   ends on its consulting-offer slide.
 - **Local-only.** Demos run from Geoff's machine with Docker Compose. There is **no hosted
-  deployment** and none should be added without asking. "Deployments" and "incidents" in the
-  orchestrator are synthetic history, not real production events.
+  deployment** and none should be added without asking. Relaxed once, by Geoff (2026-09-25): a
+  **no-op deploy workflow** (`.github/workflows/deploy.yml`) runs on GitHub so the release gate and
+  GitHub's deployment approval can be shown for real; it hosts nothing. Most "deployments" and
+  "incidents" are synthetic history; real ones are that workflow's no-op deploys and GitHub issues
+  labelled `incident`.
 - The plan lives in the blueprint doc ("PragMattie Sync: Predictive SDLC Orchestration
   Blueprint"). Phases: 1 Foundation ✅ · 2 CRM ✅ · 3 Signals + synthetic history ✅ · 4 First agents
   (triage + PR risk, governance tiers) ✅ · 5 Forecasting ✅ (#47, #48) · 6 Polish + client demo
@@ -162,9 +165,8 @@ work always gets a person. **Status: designed, not yet built — implementation 
   low-risk PR with a schema migration is T3.
 - **Approvers:** the "senior human" (T2) and the "code owner" (T3) are both **Geoff**
   (decided 2026-09-19). There is no `CODEOWNERS` file yet.
-- **Deploy column:** a deploy-only gate that stays dormant (stubbed) in local runs and only
-  fires if a real release pipeline is triggered on GitHub (decided 2026-09-19). No such pipeline
-  exists — the project is local-only — so today the gate is always stubbed.
+- **Deploy column:** the release gate, **built (2026-09-25)**; see "Release gate" under Phase 6
+  decisions. (It replaced the 2026-09-19 plan of a dormant stub, when Geoff chose a no-op deploy.)
 
 ### Simulated second approver
 
@@ -279,8 +281,8 @@ Open items:
   - **Design calls made when the spec hit real-data gaps**, all picked with Geoff (2026-09-23):
     real issues never carry a sprint (nothing assigns one), so "In progress" only requires an open
     PR for a real card, not sprint membership — a real card is also never excluded by the sprint
-    filter, regardless of which sprint is selected. There's no hosted deploy for this project, so
-    real work stops at Merged; Production is populated by simulated history only.
+    filter, regardless of which sprint is selected. Real work reaches Production once the no-op
+    deploy workflow ships its merge commit (or a later one); see "Release gate" under Phase 6.
   - **Frontend** (`apps/web/src/views/BoardView.vue` and `src/components/board/*`): polls the
     board endpoint every 15s with a highlight-flash on any card that changed column; filters for
     sprint (default: current), module, owner, and simulated-vs-real; a client-side **Replay**
@@ -472,4 +474,49 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
     Contents (branch deletion) write.
   - **The check** covers containers and the agent loop, the web app, both APIs, both databases'
     data, migrations at head, a sprint in progress, forecasts saved today, GitHub access, a clean
-    start against the baseline, and `ORCHESTRATOR_MODE` (off fails). Exit code 1 on any failure.
+    start against the baseline, the release gate's GitHub setup (deploy workflow, both
+    environments, the sign-off reviewer, the token's Deployments access), and `ORCHESTRATOR_MODE`
+    (off fails, shadow warns: the demo needs enforce). Exit code 1 on any failure.
+- **Release gate: built (2026-09-25), level 3 (a real no-op deploy), decided with Geoff.** Rules
+  only, no Claude. Rules in `sdlc/agents/release_gate.py`, settings in `tiers.yaml`
+  (`release_gate:` and each tier's `release: automatic|checks|signoff`).
+  - **A release is everything merged since the last deploy** (you deploy `main`, not a PR), at the
+    highest tier among its PRs. T0/T1 deploy automatically; T2 needs the checks: CI passed on the
+    release commit, no open incident in a module it touches, and at most 30% of the last 7 days'
+    deploys causing incidents (with at least 3 to judge); T3 needs the checks and then **Geoff
+    approves the deployment in GitHub** (the `production-signoff` environment's required
+    reviewer). Verdicts: release (`success`), hold (`pending`, clears by itself), blocked
+    (`failure`: CI failed on that commit, so only a new commit releases). A PR's risk-gate isn't
+    re-checked: once merged, its sign-off can't change. Every verdict change is an audit row
+    (`agent = release_gate`, `subject_type = release`, `subject_id` = the PR whose merge made the
+    commit).
+  - **Real releases** (`sdlc/release_runner.py`, in the shared poll loop): the deploy workflow runs
+    on every push to `main` and waits (up to 60 minutes, then fails closed) for a `release-gate`
+    commit status, which the runner posts; T3 then waits for the Approve button. The workflow
+    deploys nothing but GitHub records a real deployment, which the collector stores (with its
+    commit), so real cards reach Production. **Real incidents are GitHub issues labelled
+    `incident` + `module:<name>`** (optional `sev1`–`sev3`): open = ongoing, closed = resolved;
+    they're stored as incidents, not work, and the triage agent skips them. Deploy-workflow runs
+    are never counted as CI.
+  - **Simulated history:** every simulated deploy goes through the same rules and a hold keeps
+    the whole release for a later day (a T3 change waits for a simulated sign-off 4 hours after
+    merge, always labelled simulated). Deploy and incident draws come from per-day and per-PR
+    streams, so holds move only deploy and incident times. Effect: about 67 deploys instead of
+    78 per history, and holds are mostly sign-off and failure-rate. The pooled calibration bars
+    still pass (0.17% vs 2.97%, and 58%).
+  - **Demo flow:** open an issue labelled `incident` + `module:pipeline`, merge a pipeline PR (a
+    T2 floor), and the deploy is held ("T2 · Held: open incident in pipeline (#n)") on GitHub, the
+    board (a "Release held" chip on the merged card) and the decision log; close the issue and it
+    deploys. A billing/auth or migration PR shows the Approve deployment button.
+  - **Needs for a demo:** `ORCHESTRATOR_MODE=enforce` (shadow only says what it would do, so
+    nothing is held), then **shadow again afterwards**; the stack and agents running throughout;
+    Geoff signed in to GitHub to approve; 1–3 minutes between merge and verdict. Migration
+    `0008_release_gate` adds `merge_commit_sha` to PRs and `external_id`/`sha` to deployments and
+    incidents.
+  - **One-time GitHub setup (Geoff):** Settings > Environments: create `production`, and
+    `production-signoff` with yourself as required reviewer ("Prevent self-review" off); give the
+    token **Deployments: read and write**; re-record the demo baseline
+    (`python -m sdlc.demo_reset baseline --force`) once the repo is clean, so it lists deployments.
+  - **The demo reset** also takes the `incident` label off demo incident issues (and closes them),
+    forgets their incident rows, marks demo deployments inactive and deletes them, and forgets
+    release-gate rows about demo PRs. `release-gate` statuses on `main`'s commits can't be deleted.

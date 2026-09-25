@@ -18,6 +18,19 @@ export function cardAtTime(card, asOf) {
   return { ...card, column, entered_column_at: enteredAt }
 }
 
+/** The release gate's verdict on a merged card's release, as a chip: null when there is none.
+ * A hold clears by itself (an incident closes, CI finishes, a sign-off arrives); a block needs a
+ * new commit. See orchestrator/sdlc/agents/release_gate.py. */
+export function releaseChip(card) {
+  const r = card.release
+  if (!r || card.column !== 'merged') return null
+  const title = r.description || r.reasons.join('; ')
+  if (r.verdict === 'hold') return { text: 'Release held', color: 'warning', title }
+  if (r.verdict === 'blocked') return { text: 'Release blocked', color: 'error', title }
+  if (r.verdict === 'release') return { text: 'Releasing', color: 'success', title }
+  return null
+}
+
 export function median(nums) {
   if (!nums.length) return null
   const sorted = [...nums].sort((a, b) => a - b)

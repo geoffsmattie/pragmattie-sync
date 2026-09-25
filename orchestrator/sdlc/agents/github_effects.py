@@ -6,7 +6,8 @@ so the audit row records the effects. One failing write never stops the others.
 
 Writes the agents can make, and nothing else: one comment per PR or issue (kept up to date), a
 handful of prefixed labels (`tier:Tn` on PRs; `module:`/`type:`/`priority:`/`points:` on issues),
-plain add-only labels (`needs-info`, `possible-duplicate`), and the `risk-gate` commit status.
+plain add-only labels (`needs-info`, `possible-duplicate`), and two commit statuses: `risk-gate`
+on PR commits and `release-gate` on release commits in `main`.
 They never merge, approve, close, push, edit issue text, or edit branch protection.
 """
 
@@ -77,11 +78,13 @@ class Effects:
 
         return self._write("comment", action)
 
-    def set_status(self, sha: str, state: str, description: str) -> dict:
+    def set_status(
+        self, sha: str, state: str, description: str, context: str = STATUS_CONTEXT
+    ) -> dict:
         def action() -> dict:
             self.gh.post(
                 f"/repos/{{repo}}/statuses/{sha}",
-                {"state": state, "context": STATUS_CONTEXT, "description": description[:140]},
+                {"state": state, "context": context, "description": description[:140]},
             )
             return {"state": state}
 

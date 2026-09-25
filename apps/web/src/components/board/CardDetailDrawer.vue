@@ -73,6 +73,15 @@ function fmt(iso) {
               <td class="text-medium-emphasis">Gate missing</td>
               <td>{{ card.gate_missing.join(', ') }}</td>
             </tr>
+            <tr v-if="card.release && card.column === 'merged'">
+              <td class="text-medium-emphasis">Release gate</td>
+              <td>
+                {{ card.release.description || card.release.reasons.join('; ') }}
+                <span v-if="card.source === 'synthetic'" class="text-medium-emphasis">
+                  (simulated)
+                </span>
+              </td>
+            </tr>
             <tr v-if="card.rolled_back">
               <td class="text-medium-emphasis">Rollback</td>
               <td class="text-error">This deployment was rolled back</td>

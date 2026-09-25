@@ -110,6 +110,7 @@ class PullRequest(Base):
     state: Mapped[str] = mapped_column(String(10), default="open")  # open | merged | closed
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     merged_at: Mapped[datetime | None] = mapped_column(DateTime)
+    merge_commit_sha: Mapped[str | None] = mapped_column(String(40))  # real PRs, once merged
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     # Outcome labels the PR risk model learns to predict (Phase 4).
     caused_incident: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -135,9 +136,14 @@ class CIRun(Base):
 
 class Deployment(Base):
     __tablename__ = "sdlc_deployments"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_sdlc_deployments_source_external_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(20), default="synthetic", index=True)
+    external_id: Mapped[str | None] = mapped_column(String(64))  # real: "deployment-<id>"
+    sha: Mapped[str | None] = mapped_column(String(40))  # real: the commit deployed
     version: Mapped[str] = mapped_column(String(40))
     deployed_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     pr_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -146,9 +152,13 @@ class Deployment(Base):
 
 class Incident(Base):
     __tablename__ = "sdlc_incidents"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_sdlc_incidents_source_external_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(20), default="synthetic", index=True)
+    external_id: Mapped[str | None] = mapped_column(String(64))  # real: "issue-<n>"
     title: Mapped[str] = mapped_column(String(200))
     severity: Mapped[str] = mapped_column(String(10))  # sev1 | sev2 | sev3
     module: Mapped[str | None] = mapped_column(String(30))
@@ -205,7 +215,7 @@ class AgentDecision(Base):
     model_id: Mapped[str | None] = mapped_column(String(80))
     prompt_version: Mapped[str | None] = mapped_column(String(20))
     prompt_hash: Mapped[str | None] = mapped_column(String(64))
-    subject_type: Mapped[str] = mapped_column(String(10))  # pr | issue
+    subject_type: Mapped[str] = mapped_column(String(10))  # pr | issue | sprint | epic | release
     subject_source: Mapped[str] = mapped_column(String(20))  # synthetic | github
     subject_id: Mapped[int] = mapped_column(Integer, index=True)  # the PR or issue number
     head_sha: Mapped[str | None] = mapped_column(String(40))  # the commit scored

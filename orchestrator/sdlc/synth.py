@@ -274,7 +274,7 @@ def build(db: Session, now: datetime | None = None, seed: int = SEED) -> dict[st
 
     counts["epic_backlog"] = _add_epics(db, seed, now, current_start, issue_number)
     _assign_incidents(rng, merged_prs, risks)
-    counts["deployments"], counts["incidents"] = _deploy(db, rng, merged_prs, now)
+    counts["deployments"], counts["incidents"] = _deploy(db, merged_prs, now, seed)
     db.commit()
     return counts
 
@@ -448,12 +448,40 @@ def _make_ci_runs(db: Session, rng: random.Random, pr: PullRequest, seed: int) -
     return runs
 
 
-def _deploy(db: Session, rng: random.Random, merged: list[PullRequest], now: datetime):
-    """Ship merged PRs in weekday afternoon deploys; raise incidents for risky ones."""
+def _deploy(db: Session, merged: list[PullRequest], now: datetime, seed: int):
+    """Ship merged PRs in weekday afternoon deploys, through the release gate; raise incidents.
+
+    A deploy ships everything merged since the last one (a release of `main`). Before it ships,
+    the release gate (sdlc/agents/release_gate.py) judges it by the tier policy, from what had
+    happened by then: an open incident in a module it touches, too many recent deploys causing
+    incidents, or a T3 change without its (simulated) sign-off holds the whole release to a later
+    day. Each judgement is an audit row. Simulated CI always passes on the release commit.
+
+    Draws come from per-day and per-PR streams, so the gate's holds (or a change to its policy)
+    move deploy and incident times but never shift any other draw in the history.
+    """
+    from sdlc.agents import release_gate as gate
+    from sdlc.audit import record_decision
+    from sdlc.governance import Facts, assign_tier
+    from sdlc.scoring import score_pull_request
+    from sdlc.tiers import load_policy
+
+    policy = load_policy()
+    rules = policy.release
     merged.sort(key=lambda p: p.merged_at)
     deployments = incidents = 0
     if not merged:
         return 0, 0
+    tiers: dict[int, str] = {}
+
+    def tier_of(pr: PullRequest) -> str:
+        if pr.id not in tiers:  # scored when first released: every earlier incident is known
+            facts = Facts(pr.module, pr.touches_migration, pr.docs_only)
+            tiers[pr.id] = assign_tier(policy, score_pull_request(db, pr).total, facts).tier
+        return tiers[pr.id]
+
+    shipped: list[tuple[datetime, bool]] = []  # (deployed_at, caused an incident)
+    raised: list[Incident] = []
     day = merged[0].merged_at.date()
     pending: list[PullRequest] = []
     index = 0
@@ -461,41 +489,94 @@ def _deploy(db: Session, rng: random.Random, merged: list[PullRequest], now: dat
         while index < len(merged) and merged[index].merged_at.date() <= day:
             pending.append(merged[index])
             index += 1
-        deploy_at = _at(day, 15 + rng.random())
-        if pending and day.weekday() < 5 and rng.random() < 0.75 and deploy_at <= now:
-            bad = [p for p in pending if p.caused_incident]
-            deployments += 1
-            deployment = Deployment(
-                source=SOURCE,
-                version=f"2026.{day.timetuple().tm_yday:03d}.{deployments}",
-                deployed_at=deploy_at,
-                pr_count=len(pending),
-                status="rolled_back" if any(p.reverted for p in bad) else "success",
+        drng = random.Random(f"{seed}:deploy:{day.isoformat()}")
+        deploy_at = _at(day, 15 + drng.random())
+        wants = drng.random() < 0.75
+        if pending and day.weekday() < 5 and wants and deploy_at <= now:
+            ready = [p for p in pending if p.merged_at <= deploy_at]
+            if not ready:
+                day += timedelta(days=1)
+                continue
+            modules = sorted({p.module for p in ready if p.module})
+            window = deploy_at - timedelta(days=rules.failure_window_days)
+            recent = [bad for at, bad in shipped if window <= at < deploy_at]
+            tier = gate.release_tier([tier_of(p) for p in ready], policy.fallback_tier)
+            signoff_due = [
+                p.merged_at + timedelta(hours=rules.synthetic_signoff_hours)
+                for p in ready
+                if policy.tiers[tier_of(p)].release == "signoff"
+            ]
+            facts = gate.ReleaseFacts(
+                tier=tier,
+                prs=tuple(p.number for p in ready),
+                modules=tuple(modules),
+                open_incidents=tuple(
+                    gate.OpenIncident(module=i.module, title=i.title)
+                    for i in raised
+                    if i.module in modules
+                    and i.opened_at <= deploy_at
+                    and (i.resolved_at is None or i.resolved_at > deploy_at)
+                ),
+                recent_deploys=len(recent),
+                failed_deploys=sum(recent),
+                signoff=all(due <= deploy_at for due in signoff_due) if signoff_due else None,
             )
-            db.add(deployment)
-            db.flush()
-            for pr in bad:
-                sev = (
-                    "sev1" if pr.module == "billing_auth" else rng.choice(["sev2", "sev3", "sev3"])
+            verdict = gate.evaluate(policy, facts, mode="enforce")
+            deployment = None
+            if verdict.verdict == "release":
+                bad = [p for p in ready if p.caused_incident]
+                deployments += 1
+                deployment = Deployment(
+                    source=SOURCE,
+                    version=f"2026.{day.timetuple().tm_yday:03d}.{deployments}",
+                    deployed_at=deploy_at,
+                    pr_count=len(ready),
+                    status="rolled_back" if any(p.reverted for p in bad) else "success",
                 )
-                opened = deploy_at + timedelta(hours=rng.uniform(0.5, 20))
-                restore = rng.uniform(0.5, 3) if pr.reverted else rng.uniform(2, 14)
-                db.add(
-                    Incident(
+                db.add(deployment)
+                db.flush()
+                shipped.append((deploy_at, bool(bad)))
+                for pr in bad:
+                    irng = random.Random(f"{seed}:incident:{pr.number}")
+                    sev = (
+                        "sev1"
+                        if pr.module == "billing_auth"
+                        else irng.choice(["sev2", "sev3", "sev3"])
+                    )
+                    opened = deploy_at + timedelta(hours=irng.uniform(0.5, 20))
+                    restore = irng.uniform(0.5, 3) if pr.reverted else irng.uniform(2, 14)
+                    resolved = opened + timedelta(hours=restore)
+                    incident = Incident(
                         source=SOURCE,
                         title=f"{MODULE_LABELS[pr.module]} degraded after {deployment.version}",
                         severity=sev,
                         module=pr.module,
                         opened_at=opened,
-                        resolved_at=opened + timedelta(hours=restore)
-                        if opened + timedelta(hours=restore) <= now
-                        else None,
+                        resolved_at=resolved if resolved <= now else None,
                         caused_by_pr_id=pr.id,
                         deployment_id=deployment.id,
                     )
-                )
-                incidents += 1
-            pending = []
+                    db.add(incident)
+                    raised.append(incident)
+                    incidents += 1
+                pending = [p for p in pending if p not in ready]
+            record_decision(
+                db,
+                agent=gate.AGENT,
+                agent_version=gate.AGENT_VERSION,
+                subject_type="release",
+                subject_source=SOURCE,
+                subject_id=max(facts.prs),
+                trigger="schedule",
+                now=deploy_at,
+                head_sha=f"syn-{day.isoformat()}",
+                tier=tier,
+                output=gate.output_of(facts, verdict),
+                action_taken={"deployed": deployment.version}
+                if deployment
+                else {"held": True, "state": verdict.state},
+                status="ok",
+            )
         day += timedelta(days=1)
     return deployments, incidents
 

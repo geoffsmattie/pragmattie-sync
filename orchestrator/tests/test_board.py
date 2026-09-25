@@ -270,7 +270,7 @@ def test_rolled_back_deployment_keeps_the_card_in_production_flagged(db):
     assert card.rolled_back is True
 
 
-def test_real_merged_pr_never_reaches_production_no_real_deploys_exist(db):
+def test_a_simulated_deployment_never_ships_a_real_pr(db):
     issue = make_issue(db, module="leads", points=3)
     make_pr(db, issue=issue, state="merged", merged_at=NOW - timedelta(days=30))
     # A synthetic deployment exists, but it must never claim a real PR (different source).

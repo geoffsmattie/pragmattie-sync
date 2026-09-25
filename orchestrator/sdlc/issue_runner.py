@@ -44,6 +44,7 @@ from sdlc.audit import TRIAL, decisions_for, latest_decision, record_decision
 from sdlc.config import get_settings
 from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError
+from sdlc.signals.github import is_incident
 from sdlc.similarity import similar_issues
 from sdlc.tiers import load_policy  # only to fail fast if the policy file is broken
 
@@ -81,6 +82,8 @@ class IssueRunner:
         for item in self.gh.get("/repos/{repo}/issues", state="open", per_page=100):
             if "pull_request" in item:  # the issues endpoint also returns PRs
                 continue
+            if is_incident(item):
+                continue  # an incident report, not work to triage (the release gate reads it)
             summary["issues"] += 1
             try:
                 self._handle(item, now, summary)

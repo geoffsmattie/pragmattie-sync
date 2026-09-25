@@ -24,6 +24,20 @@ caps:
 # tier, or to this one when no floor applies. The check fails closed; it never fails open.
 fallback_tier: T2
 
+# The release gate (sdlc/agents/release_gate.py): what a release needs before it deploys. A release
+# is everything merged since the last deploy, and it takes the highest tier among its PRs. Each
+# tier's `release` below says which of these apply: automatic (none), checks, or signoff (the
+# checks, then a person approves the deployment: the `signoff_environment` in GitHub, or a
+# simulated sign-off in the simulated history).
+release_gate:
+  environment: production  # the GitHub environment a deploy uses
+  signoff_environment: production-signoff  # the same, with Geoff as required reviewer
+  failure_rate:  # hold when too many recent deploys caused an incident
+    window_days: 7
+    max: 0.3
+    min_deploys: 3  # fewer deploys than this in the window: too few to judge, don't hold
+  synthetic_signoff_hours: 4  # simulated history: how long after merge a T3 sign-off arrives
+
 # What each tier requires. `humans` counts human approvals (the simulated approver in
 # approvers.yaml can fill the second seat of T3). `agent_check` says what the risk agent may do
 # with the risk-gate check: passes_alone (no human needed), passes_after_approvals (once the
@@ -37,6 +51,7 @@ tiers:
     tests: selected suites
     deploy: automatic
     agent_check: passes_alone
+    release: automatic
   T1:
     name: Light
     humans: 1
@@ -45,6 +60,7 @@ tiers:
     tests: selected suites
     deploy: automatic after merge
     agent_check: passes_after_approvals
+    release: automatic
   T2:
     name: Standard
     humans: 1
@@ -53,6 +69,7 @@ tiers:
     tests: full suite
     deploy: release gate checks
     agent_check: passes_after_approvals
+    release: checks
   T3:
     name: Critical
     humans: 2
@@ -61,3 +78,4 @@ tiers:
     tests: full suite + manual QA
     deploy: human sign-off required
     agent_check: reports_only
+    release: signoff

@@ -6,6 +6,7 @@ import {
   groupByColumn,
   median,
   movedCardKeys,
+  releaseChip,
 } from '../src/board'
 
 const COLUMNS = [
@@ -124,5 +125,31 @@ describe('movedCardKeys', () => {
   it('does not flag a card seen for the first time', () => {
     const after = [card({ key: 'issue-3', column: 'backlog' })]
     expect(movedCardKeys([], after)).toEqual(new Set())
+  })
+})
+
+describe('releaseChip', () => {
+  const release = (verdict) => ({
+    verdict,
+    description: 'T2 · Held: open incident in pipeline (#61)',
+    reasons: ['open incident in pipeline (#61)'],
+  })
+
+  it('shows a merged card held, blocked or releasing', () => {
+    const held = releaseChip(card({ column: 'merged', release: release('hold') }))
+    expect(held).toEqual({
+      text: 'Release held',
+      color: 'warning',
+      title: 'T2 · Held: open incident in pipeline (#61)',
+    })
+    expect(releaseChip(card({ column: 'merged', release: release('blocked') })).color).toBe('error')
+    expect(releaseChip(card({ column: 'merged', release: release('release') })).text).toBe(
+      'Releasing',
+    )
+  })
+
+  it('shows nothing without a verdict or outside Merged', () => {
+    expect(releaseChip(card({ column: 'merged', release: null }))).toBeNull()
+    expect(releaseChip(card({ column: 'production', release: release('hold') }))).toBeNull()
   })
 })

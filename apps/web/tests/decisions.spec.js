@@ -10,6 +10,11 @@ describe('subjectLabel', () => {
     expect(subjectLabel({ subject_type: 'pr', subject_id: 45 })).toBe('PR #45')
   })
 
+  it('labels a release by the newest PR in it', () => {
+    expect(subjectLabel({ subject_type: 'release', subject_id: 61 })).toBe('Release up to PR #61')
+    expect(subjectLabel({ subject_type: 'release', subject_id: 0 })).toBe('Release')
+  })
+
   it('labels a forecast by the sprint or epic it forecasts', () => {
     const sprint = { subject_type: 'sprint', subject_id: 3, output: { subject: 'Sprint 13' } }
     expect(subjectLabel(sprint)).toBe('Sprint: Sprint 13')

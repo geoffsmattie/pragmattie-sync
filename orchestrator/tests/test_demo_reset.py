@@ -30,6 +30,7 @@ class Repo:
         self.prs = {3: {"state": "closed", "merged": True, "ref": "phase-4-agents", "labels": []}}
         self.comments: dict[int, list[dict]] = {}
         self.branches = {"main", "phase-4-agents"}
+        self.deployments: dict[int, str] = {}  # id -> state
         self.writes: list[tuple[str, str]] = []
 
     def client(self):
@@ -43,6 +44,20 @@ class Repo:
             self.writes.append((method, path))
         if path == base:
             return httpx.Response(200, json={"default_branch": "main", "full_name": REPO})
+        if path == f"{base}/deployments":
+            return httpx.Response(
+                200,
+                json=[
+                    {"id": i, "sha": "abc1234def", "environment": "production"}
+                    for i in sorted(self.deployments)
+                ],
+            )
+        if method == "POST" and (m := re.fullmatch(rf"{base}/deployments/(\d+)/statuses", path)):
+            self.deployments[int(m[1])] = body["state"]
+            return httpx.Response(201, json={})
+        if method == "DELETE" and (m := re.fullmatch(rf"{base}/deployments/(\d+)", path)):
+            assert self.deployments.pop(int(m[1])) == "inactive"  # GitHub's rule
+            return httpx.Response(204)
         if path == f"{base}/branches":
             return httpx.Response(200, json=[{"name": b} for b in sorted(self.branches)])
         if path == f"{base}/issues":
@@ -85,7 +100,8 @@ class Repo:
             self.issues[int(m[1])]["labels"] = body["labels"]
             return httpx.Response(200, json=[])
         if method == "DELETE" and (m := re.fullmatch(rf"{base}/issues/(\d+)/labels/(.+)", path)):
-            self.prs[int(m[1])]["labels"].remove(
+            n = int(m[1])
+            (self.issues if n in self.issues else self.prs)[n]["labels"].remove(
                 httpx.URL(path).path.split("/")[-1].replace("%3A", ":")
             )
             return httpx.Response(200, json=[])
@@ -112,6 +128,8 @@ def after_a_demo(repo: Repo) -> dict:
         {"id": 1, "body": f"{RISK}\n## Risk review: T0"},
         {"id": 2, "body": "Geoff: looks good"},
     ]
+    repo.issues[49] = {"state": "open", "labels": ["incident", "module:pipeline"], "title": "Down"}
+    repo.deployments[501] = "success"  # the deploy workflow's, during the demo
     return baseline
 
 
@@ -122,11 +140,14 @@ def test_a_reset_undoes_the_demo_and_never_touches_the_baseline(tmp_path):
     assert load_baseline(tmp_path / "baseline.json") == baseline
 
     p = plan(repo.client(), baseline)
-    assert (p.demo_issues, sorted(p.demo_prs)) == ([46], [47, 48])
+    assert (p.demo_issues, sorted(p.demo_prs), p.demo_deployments) == ([46, 49], [47, 48], 1)
     done, failed = apply_plan(repo.client(), p)
     assert failed == []
 
     assert repo.issues[46]["state"] == "closed"  # opened live: closed (can't be deleted)
+    # A demo incident is closed and stops being an incident; the demo's deployment is deleted.
+    assert (repo.issues[49]["state"], repo.issues[49]["labels"]) == ("closed", ["module:pipeline"])
+    assert repo.deployments == {}
     assert repo.issues[7]["state"] == "open"  # the backlog is back as it was
     assert repo.issues[6]["labels"] == ["module:leads", "type:feature"]
     assert repo.prs[47]["state"] == "closed" and repo.prs[47]["labels"] == []
@@ -161,10 +182,10 @@ def test_the_database_forgets_demo_items_and_keeps_the_rest(db):
             )
         )
     db.commit()
-    for n, kind in ((5, "pr"), (47, "pr"), (46, "issue"), (8, "issue")):
+    for n, kind in ((5, "pr"), (47, "pr"), (46, "issue"), (8, "issue"), (47, "release")):
         record_decision(
             db,
-            agent="pr_risk" if kind == "pr" else "triage",
+            agent={"pr": "pr_risk", "issue": "triage", "release": "release_gate"}[kind],
             agent_version="v1",
             subject_type=kind,
             subject_source="github",
@@ -186,16 +207,19 @@ def test_the_database_forgets_demo_items_and_keeps_the_rest(db):
     db.commit()
 
     result = reset_database(db, demo_issues=[46], demo_prs=[47])
-    assert result["audit_rows_forgotten"] == 2
-    left = sorted((d.subject_type, d.subject_id) for d in db.query(AgentDecision))
+    assert result["audit_rows_forgotten"] == 3
+    left = sorted(
+        (d.subject_type, d.subject_id)
+        for d in db.query(AgentDecision).filter_by(subject_source="github")
+    )
     assert left == [("issue", 8), ("pr", 5)]
     assert db.query(Approval).count() == 0
     assert result["history"]["sprints"] == 13  # and the simulated history is fresh
 
 
 def test_the_checklist_flags_mode_off_and_sums_up():
-    assert _mode("off").state == "FAIL" and _mode("shadow").state == "PASS"
-    assert _mode("enforce").state == "WARN"
+    assert _mode("off").state == "FAIL" and _mode("shadow").state == "WARN"
+    assert _mode("enforce").state == "PASS"
     text = describe([Check("A", "PASS", "ok"), Check("B", "FAIL", "fix it")])
     assert text.endswith("Not ready: 1 check(s) failed.")
     assert describe([Check("A", "PASS", "ok")]).endswith("Ready for the demo.")
