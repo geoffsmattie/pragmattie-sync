@@ -26,6 +26,7 @@ import argparse
 import logging
 from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from sdlc.agents.github_effects import Effects
@@ -46,6 +47,7 @@ from sdlc.db import SessionLocal
 from sdlc.github_client import GitHubClient, GitHubError
 from sdlc.signals.github import is_incident
 from sdlc.similarity import similar_issues
+from sdlc.tables import Issue
 from sdlc.tiers import load_policy  # only to fail fast if the policy file is broken
 
 DIMENSIONS = ("module", "type", "priority", "points")
@@ -99,6 +101,7 @@ class IssueRunner:
 
         with SessionLocal() as db:
             labels = self.effects.read_labels(number)
+            _store_labels(db, number, labels)
             forced = RETRIAGE_LABEL in labels
             last = latest_decision(
                 db, AGENT, subject_type="issue", subject_source="github", subject_id=number
@@ -195,6 +198,21 @@ class IssueRunner:
             ),
         }
         return [dim for dim in DIMENSIONS if prior[dim] is not None and current[dim] != prior[dim]]
+
+
+def _store_labels(db, number: int, labels: list[str]) -> None:
+    """Keep the stored issue's dimension labels as GitHub has them now, so a person's correction
+    of the agent's labels shows in the accuracy trend (sdlc/accuracy.py) without another call."""
+    issue = db.scalar(select(Issue).where(Issue.source == "github", Issue.number == number))
+    if issue is None:
+        return  # not collected yet; the collector stores it with its labels
+    for dim, column in (("module", "module"), ("type", "type"), ("priority", "priority")):
+        if (value := _label_value(labels, dim)) is not None:
+            setattr(issue, column, value)
+    points = _label_value(labels, "points")
+    if points and points.isdigit():
+        issue.estimate_points = int(points)
+    db.commit()
 
 
 def _label_value(labels: list[str], prefix: str) -> str | None:

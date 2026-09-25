@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from sdlc import audit, forecaster, metrics
+from sdlc import accuracy, audit, forecaster, metrics
 from sdlc import board as board_module
 from sdlc.calibration import calibrate
 from sdlc.config import get_settings
@@ -111,6 +111,12 @@ def calibration(db: DB) -> dict:
         .where(PullRequest.state == "merged", PullRequest.source == "github")
     )
     return {**report, "real_merged_prs": real}
+
+
+@app.get("/api/v1/signals/accuracy")
+def accuracy_trend(db: DB) -> dict:
+    """How accurate the predictions have been over time: forecasts, risk, triage, test selector."""
+    return accuracy.report(db)
 
 
 @app.get("/api/v1/signals/forecast")

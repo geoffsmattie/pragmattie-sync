@@ -485,6 +485,23 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
     start against the baseline, the release gate's GitHub setup (deploy workflow, both
     environments, the sign-off reviewer, the token's Deployments access), and `ORCHESTRATOR_MODE`
     (off fails, shadow warns: the demo needs enforce). Exit code 1 on any failure.
+- **Accuracy trend: built (2026-09-25), decided with Geoff.** The `/accuracy` page ("Prediction
+  accuracy"), from `GET /api/v1/signals/accuracy` (`sdlc/accuracy.py`; no Claude, no GitHub calls;
+  the two simulated trends are cached per day and history, about 5 seconds to build). Four trends,
+  each labelled simulated or real:
+  - **Delivery forecasts (simulated):** a backtest. Each finished sprint is forecast again as of
+    its third working day by the forecaster's own seeded engine, using only what was known then,
+    and its P50/P85 checked against when its last item closed. Targets: P85 met ~85%, P50 ~50%.
+    Sprints with no throughput behind them are skipped. First result (2026-09-25, 11 sprints): P85
+    82%, P50 36%, and the P50 error shrinks from weeks too cautious in early sprints (thin
+    history) to a few days.
+  - **Risk score (simulated):** per sprint, incident PRs the rubric put at T2+ (12 of 15, 80%, one
+    at T0). Real PRs are reported as counts: none has caused an incident yet.
+  - **Triage (real):** per week, issues the agent labelled and how many a person changed since.
+    The triage poll now stores each issue's current labels (it reads them every poll anyway).
+    Kept labels can echo existing ones; the blind `sdlc.eval` stays the stricter test.
+  - **Test selector (real):** per week, settled commits and misses.
+  - Real trends draw only from 5 data points; below that they show counts.
 - **Release gate: built (2026-09-25), level 3 (a real no-op deploy), decided with Geoff.** Rules
   only, no Claude. Rules in `sdlc/agents/release_gate.py`, settings in `tiers.yaml`
   (`release_gate:` and each tier's `release: automatic|checks|signoff`).
