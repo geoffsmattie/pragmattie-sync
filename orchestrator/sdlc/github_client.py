@@ -58,6 +58,9 @@ class GitHubClient:
     def patch(self, path: str, body: dict) -> dict:
         return self._check(self.http.patch(self._path(path), json=body)).json()
 
+    def put(self, path: str, body: dict) -> dict | list:
+        return self._check(self.http.put(self._path(path), json=body)).json()
+
     def delete(self, path: str) -> None:
         self._check(self.http.delete(self._path(path)))
 
