@@ -461,10 +461,18 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
   `sdlc/demo_check.py`.
   - **The baseline** is a snapshot of the repository at a clean moment (issues with state and
     labels, PR numbers, branches), recorded with `demo.ps1 baseline` into
-    `orchestrator/.demo/baseline.json` (git-ignored). Recorded 2026-09-24 with the 40 backlog issues
-    open, 12 PRs, no open PRs. Anything numbered after it is demo residue; nothing in the baseline,
+    `orchestrator/.demo/baseline.json` (git-ignored). Last recorded 2026-09-25: the 40 backlog
+    issues open, 14 PRs, no open PRs, and the first real deployment. Nothing in the baseline,
     `main`, or any baseline branch is ever closed or deleted.
-  - **A reset** closes issues opened during the demo (GitHub can't delete them), puts backlog
+  - **Demo items are marked, not guessed (decided with Geoff, 2026-09-25):** the reset cleans up
+    only issues and PRs labelled **`demo`**, and PRs from branches starting **`demo-`**. Real
+    development in this repo (the PRs are this project building itself) is left alone, so its
+    risk scores, CI record, release verdicts and deploys keep accumulating: that is where shadow
+    mode's real sprint, the test selector's track record and any real accuracy trend come from.
+    The reset lists what it kept. So in a demo: label every issue you open `demo` (incident
+    reports too) and name PR branches `demo-...`. The `demo` and `incident` labels are created by
+    `python -m sdlc.backlog --apply`, and the check confirms they exist.
+  - **A reset** closes demo issues (GitHub can't delete them), puts backlog
     issues back to their baseline state and labels, closes demo PRs and deletes their agent
     comments, `tier:` labels and branches (in this repo, not in the baseline), reseeds the CRM,
     regenerates the simulated history for today (which forgets saved forecasts and planner
@@ -504,7 +512,8 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
     streams, so holds move only deploy and incident times. Effect: about 67 deploys instead of
     78 per history, and holds are mostly sign-off and failure-rate. The pooled calibration bars
     still pass (0.17% vs 2.97%, and 58%).
-  - **Demo flow:** open an issue labelled `incident` + `module:pipeline`, merge a pipeline PR (a
+  - **Demo flow:** open an issue labelled `incident` + `module:pipeline` + `demo`, merge a
+    pipeline PR from a `demo-` branch (a
     T2 floor), and the deploy is held ("T2 · Held: open incident in pipeline (#n)") on GitHub, the
     board (a "Release held" chip on the merged card) and the decision log; close the issue and it
     deploys. A billing/auth or migration PR shows the Approve deployment button.

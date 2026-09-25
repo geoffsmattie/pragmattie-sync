@@ -171,6 +171,17 @@ def _release_setup(gh) -> list[Check]:
 
     rules = load_policy().release
     out = []
+    for label, why in (
+        ("demo", "marks what the reset cleans up"),
+        ("incident", "raises a real incident"),
+    ):
+        try:
+            gh.get(f"/repos/{{repo}}/labels/{label}")
+            out.append(Check(f"Label {label}", "PASS", f"exists ({why})"))
+        except GitHubError:
+            out.append(
+                Check(f"Label {label}", "FAIL", "missing: run `python -m sdlc.backlog --apply`.")
+            )
     try:
         gh.get(f"/repos/{{repo}}/actions/workflows/{DEPLOY_WORKFLOW}")
         out.append(Check("Deploy workflow", "PASS", f"{DEPLOY_WORKFLOW} is on the default branch"))
