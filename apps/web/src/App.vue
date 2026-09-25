@@ -8,7 +8,7 @@ const nav = [
   { title: 'Pipeline', icon: 'mdi-view-column-outline', to: '/pipeline' },
   { title: 'Forecast', icon: 'mdi-chart-line', to: '/forecast' },
   { header: 'Delivery intelligence' },
-  { title: 'Delivery board', icon: 'mdi-kanban', to: '/board' },
+  { title: 'Delivery board', icon: 'mdi-view-week-outline', to: '/board' },
   { title: 'Delivery forecast', icon: 'mdi-calendar-clock', to: '/delivery' },
   { title: 'Engineering signals', icon: 'mdi-pulse', to: '/engineering' },
   { title: 'Prediction accuracy', icon: 'mdi-bullseye-arrow', to: '/accuracy' },
