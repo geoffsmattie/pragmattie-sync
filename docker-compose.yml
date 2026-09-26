@@ -1,5 +1,5 @@
 # One command starts the whole stack:  docker compose up --build
-#   Web app  -> http://localhost:5173
+#   Web app  -> http://pragmattie-sync.localhost (or http://localhost:5173)
 #   API docs -> http://localhost:8000/docs
 #   Orchestrator API docs -> http://localhost:8001/docs
 #   MySQL    -> localhost:3307 (from your PC; containers use db:3306)
@@ -79,6 +79,17 @@ services:
     depends_on:
       - api
       - orchestrator
+
+  # A friendly address for the web app: http://pragmattie-sync.localhost (see proxy/Caddyfile).
+  proxy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - web
+    restart: unless-stopped
 
 volumes:
   mysql-data:

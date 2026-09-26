@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: str = (
         "mysql+pymysql://pragmattie_sync:pragmattie_sync@localhost:3306/pragmattie_sync"
     )
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://pragmattie-sync.localhost"]
 
     # GitHub access for the signals collector and backlog script.
     # A fine-grained token scoped to this one repository.
