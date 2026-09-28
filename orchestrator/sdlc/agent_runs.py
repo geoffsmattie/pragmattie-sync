@@ -125,5 +125,6 @@ class AgentRunCollector:
                 "comment": comment.get("html_url"),
             },
             status="ok" if succeeded(record) else "error",
+            error=(record.get("error") or None) and str(record["error"])[:500],
         )
         return True
