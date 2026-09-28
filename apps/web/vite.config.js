@@ -4,7 +4,8 @@ import vuetify from 'vite-plugin-vuetify'
 
 export default defineConfig({
   plugins: [vue(), vuetify({ autoImport: true })],
-  server: { port: 5173 },
+  // pragmattie-sync.localhost reaches Vite through the proxy service (proxy/Caddyfile).
+  server: { port: 5173, allowedHosts: ['pragmattie-sync.localhost'] },
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.spec.js'],

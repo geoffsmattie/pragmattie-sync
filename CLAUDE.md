@@ -16,7 +16,9 @@ here is marked **TODO**, it has not been decided yet — ask Geoff rather than g
 - **Local-only.** Demos run from Geoff's machine with Docker Compose. There is **no hosted
   deployment** and none should be added without asking. Relaxed once, by Geoff (2026-09-25): a
   **no-op deploy workflow** (`.github/workflows/deploy.yml`) runs on GitHub so the release gate and
-  GitHub's deployment approval can be shown for real; it hosts nothing. Most "deployments" and
+  GitHub's deployment approval can be shown for real; it hosts nothing. **Changed permanently by
+  Geoff (2026-09-26): development moves to GitHub** (agents doing the work, see "Agent
+  development" below), with the local Docker stack kept as an emergency fallback. Most "deployments" and
   "incidents" are synthetic history; real ones are that workflow's no-op deploys and GitHub issues
   labelled `incident`.
 - The plan lives in the blueprint doc ("PragMattie Sync: Predictive SDLC Orchestration
@@ -31,7 +33,7 @@ here is marked **TODO**, it has not been decided yet — ask Geoff rather than g
 | CRM API | Python, FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 | `apps/api` (port 8000); Python 3.12 in Docker |
 | Orchestrator | Python, FastAPI, same libraries, httpx, PyYAML | `orchestrator/` — a **separate service** (port 8001), see `docs/adr/0002` |
 | Database | **MySQL 8.4 — not Postgres** | Docker service `db`; host port **3307** (3306 is taken on Geoff's PC); containers use `db:3306` |
-| Front end | **Vue 3 — not React** — Vite, **Vuetify** (MIT), Pinia, Vue Router, Chart.js via vue-chartjs | `apps/web` (port 5173). PrimeVue was rejected: v5 requires a license key |
+| Front end | **Vue 3 — not React** — Vite, **Vuetify** (MIT), Pinia, Vue Router, Chart.js via vue-chartjs | `apps/web` (port 5173, and `http://pragmattie-sync.localhost` through the `proxy` service, Caddy, `proxy/Caddyfile`; decided 2026-09-26: `.localhost` needs no hosts-file edit and doesn't shadow a real domain). PrimeVue was rejected: v5 requires a license key |
 | Tests / lint | pytest + ruff (Python), Vitest (web) | |
 | CI | GitHub Actions (`.github/workflows/ci.yml`) | |
 | Agents (Phase 4+) | Python + Claude API | `ANTHROPIC_API_KEY` in `.env` locally, repo secret in GitHub |
@@ -65,6 +67,7 @@ Decisions are recorded as ADRs in `docs/adr/`.
 ```bash
 cp .env.example .env            # first time only (PowerShell: Copy-Item .env.example .env)
 docker compose up --build       # web :5173, CRM API :8000, orchestrator :8001, MySQL :3307
+                                # web also at http://pragmattie-sync.localhost (proxy on :80)
 docker compose up --build -V    # after dependency changes (renews the node_modules volume)
 docker compose exec api python -m app.seed --reset             # reset CRM demo data
 docker compose exec orchestrator python -m sdlc.synth --reset  # regenerate engineering history
@@ -546,3 +549,37 @@ slide, then the demo script, rehearsal and a recorded backup. The audit log view
   - **The demo reset** also takes the `incident` label off demo incident issues (and closes them),
     forgets their incident rows, marks demo deployments inactive and deletes them, and forgets
     release-gate rows about demo PRs. `release-gate` statuses on `main`'s commits can't be deleted.
+
+### Agent development: the agentic rebuild (decided 2026-09-26, not built yet)
+
+Geoff's direction: the project is **rebuilt entirely by agents**, with Geoff as technical project
+manager / product manager and, later, one or two human developers in the loop where risk calls
+for a person. Decided with Geoff:
+
+- **A new public repository, `geoffsmattie/pragmattie-sync-agentic`**, built from scratch by agents.
+  This repository (v1) stays the working demo until the rebuild overtakes it.
+- **v1 governs v2:** this repo's agents (triage, PR risk, test selector, release gate, accuracy)
+  are pointed at the new repository, so every agent PR there is tiered, gated and audited here.
+  The story: "a governance system supervised AI agents rebuilding the whole product."
+- **Runs in GitHub** (permanent change to the local-only rule): the implementer agent runs in
+  GitHub Actions on the new repo; the local stack stays as an emergency fallback and hosts v1's
+  governance for now.
+- **A GitHub App** gives the agents their own identity (Geoff gave permission), so their PRs aren't
+  authored by Geoff and he can approve them with real GitHub reviews.
+- **Models:** Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the workflow (the rule lives in
+  `tiers.yaml`): a `model:opus`/`model:sonnet` label on the issue wins, then the PR's actual tier, then
+  the issue's `forecast:Tn` label. Every run's model is in the audit trail. **No automatic step-up to
+  Opus after a failed Sonnet run** (Geoff, 2026-09-27). **Reminder:** issue #1 in the agentic repo,
+  assigned to Geoff, to re-evaluate at the M1 gate, after 20 agent runs, or after 3 Sonnet failures
+  in a row; the implementer workflow must comment there on every Sonnet run that ends with failing
+  tests. When any of those triggers is reached, remind Geoff.
+- **Budget:** $100/month for the first month as a pilot (hard limit in the Anthropic Console, plus
+  per-run and daily caps in code, every run an audit row), then decided from measured cost per
+  issue. Estimate for the whole rebuild (~22k lines, 70-100 issues): $250-500 on Sonnet 5; about
+  $150/month over 2-3 months; Geoff's review time (25-50 hours) is the real limit.
+- **Geoff approves everything at first**, whatever the tier; auto-merge only later, with a record.
+- **Order:** (1) setup: repo, GitHub App, secrets (Geoff's clicks); (2) the rebuild plan: the current
+  system turned into an ordered backlog of specs, **approved by Geoff before any code is written**;
+  (3) the implementer workflow, run on 2-3 small issues first, with measured cost reported.
+- **TODO:** how v1's collectors and agents handle a second repository (today `GITHUB_REPO` is one
+  repo); the human developers' GitHub usernames (they would replace the simulated second approver).

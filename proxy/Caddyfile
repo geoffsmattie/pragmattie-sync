@@ -1,0 +1,10 @@
+# A friendlier local address for the web app: http://pragmattie-sync.localhost
+# Chrome and Edge send every *.localhost name to this machine, so no hosts-file edit is needed.
+# Plain HTTP on port 80; the app is still at http://localhost:5173 too.
+{
+	auto_https off
+}
+
+http://pragmattie-sync.localhost {
+	reverse_proxy web:5173
+}
