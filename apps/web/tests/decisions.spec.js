@@ -10,6 +10,12 @@ describe('subjectLabel', () => {
     expect(subjectLabel({ subject_type: 'pr', subject_id: 45 })).toBe('PR #45')
   })
 
+  it('marks issues and PRs from the rebuild repository', () => {
+    expect(subjectLabel({ subject_type: 'issue', subject_source: 'agentic', subject_id: 3 })).toBe(
+      'Rebuild Issue #3',
+    )
+  })
+
   it('labels a release by the newest PR in it', () => {
     expect(subjectLabel({ subject_type: 'release', subject_id: 61 })).toBe('Release up to PR #61')
     expect(subjectLabel({ subject_type: 'release', subject_id: 0 })).toBe('Release')

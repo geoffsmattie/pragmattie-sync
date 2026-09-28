@@ -44,7 +44,7 @@ const label = computed(() => (props.decision ? subjectLabel(props.decision) : ''
           <tbody>
             <tr>
               <td class="text-medium-emphasis">Source</td>
-              <td>{{ decision.subject_source === 'synthetic' ? 'Simulated' : 'GitHub' }}</td>
+              <td>{{ { synthetic: 'Simulated', agentic: 'Rebuild repository' }[decision.subject_source] ?? 'GitHub' }}</td>
             </tr>
             <tr>
               <td class="text-medium-emphasis">Model</td>

@@ -66,7 +66,7 @@ def shipped_through(db: Session, deployment: Deployment) -> datetime:
 def release_prs(db: Session, head: PullRequest) -> list[PullRequest]:
     """Every real PR merged since the last successful deploy, up to and including `head`."""
     deploys = db.scalars(
-        select(Deployment).where(Deployment.source == SOURCE, Deployment.status == "success")
+        select(Deployment).where(Deployment.source == head.source, Deployment.status == "success")
     )
     cutoffs = [shipped_through(db, d) for d in deploys]
     since = max(cutoffs) if cutoffs else None
@@ -74,7 +74,7 @@ def release_prs(db: Session, head: PullRequest) -> list[PullRequest]:
         return [head]  # the first release: just this commit's PR
     rows = db.scalars(
         select(PullRequest).where(
-            PullRequest.source == SOURCE,
+            PullRequest.source == head.source,
             PullRequest.state == "merged",
             PullRequest.merged_at > since,
             PullRequest.merged_at <= head.merged_at,
@@ -90,7 +90,7 @@ def tier_of(db: Session, policy: Policy, pr: PullRequest) -> str:
     if status:
         return status
     decided = latest_decision(
-        db, PR_RISK_AGENT, subject_type="pr", subject_source=SOURCE, subject_id=pr.number
+        db, PR_RISK_AGENT, subject_type="pr", subject_source=pr.source, subject_id=pr.number
     )
     if decided and decided.tier:
         return decided.tier
@@ -98,13 +98,15 @@ def tier_of(db: Session, policy: Policy, pr: PullRequest) -> str:
     return assign_tier(policy, score_pull_request(db, pr).total, facts).tier
 
 
-def recent_deploys(db: Session, policy: Policy, now: datetime) -> tuple[int, int]:
+def recent_deploys(
+    db: Session, policy: Policy, now: datetime, source: str = SOURCE
+) -> tuple[int, int]:
     """(real deploys in the failure-rate window, how many of them caused an incident)."""
     since = now - timedelta(days=policy.release.failure_window_days)
     deploys = list(
         db.scalars(
             select(Deployment).where(
-                Deployment.source == SOURCE,
+                Deployment.source == source,
                 Deployment.status == "success",
                 Deployment.deployed_at >= since,
             )
@@ -112,15 +114,16 @@ def recent_deploys(db: Session, policy: Policy, now: datetime) -> tuple[int, int
     )
     caused = {
         i.deployment_id
-        for i in db.scalars(select(Incident).where(Incident.source == SOURCE))
+        for i in db.scalars(select(Incident).where(Incident.source == source))
         if i.deployment_id
     }
     return len(deploys), sum(d.id in caused for d in deploys)
 
 
 class ReleaseRunner:
-    def __init__(self, gh: GitHubClient, policy: Policy, mode: str):
+    def __init__(self, gh: GitHubClient, policy: Policy, mode: str, source: str = SOURCE):
         self.gh = gh
+        self.source = source
         self.policy = policy
         self.mode = mode
         self.effects = Effects(gh, mode)
@@ -135,7 +138,7 @@ class ReleaseRunner:
         summary = {"mode": self.mode, "releases": 0, "assessed": 0, "errors": 0}
         rules = self.policy.release
         with SessionLocal() as db:
-            collector = Collector(db, self.gh)
+            collector = Collector(db, self.gh, self.source)
             collector.collect_deployments((rules.environment, rules.signoff_environment))
             collector.collect_incidents()
             waiting = self.waiting_commits()
@@ -179,7 +182,8 @@ class ReleaseRunner:
                 continue
             known = db.scalar(
                 select(PullRequest).where(
-                    PullRequest.source == SOURCE, PullRequest.external_id == f"pr-{item['number']}"
+                    PullRequest.source == self.source,
+                    PullRequest.external_id == f"pr-{item['number']}",
                 )
             )
             if known is None or known.merge_commit_sha is None:
@@ -188,7 +192,7 @@ class ReleaseRunner:
     def head_pr(self, db: Session, collector: Collector, sha: str) -> PullRequest | None:
         pr = db.scalar(
             select(PullRequest).where(
-                PullRequest.source == SOURCE, PullRequest.merge_commit_sha == sha
+                PullRequest.source == self.source, PullRequest.merge_commit_sha == sha
             )
         )
         if pr:
@@ -214,12 +218,12 @@ class ReleaseRunner:
             )
         incidents = db.scalars(
             select(Incident).where(
-                Incident.source == SOURCE,
+                Incident.source == self.source,
                 Incident.resolved_at.is_(None),
                 Incident.module.in_(modules or ["-"]),
             )
         )
-        deploys, failed = recent_deploys(db, self.policy, now)
+        deploys, failed = recent_deploys(db, self.policy, now, self.source)
         return gate.ReleaseFacts(
             tier=gate.release_tier(
                 [tier_of(db, self.policy, p) for p in prs], self.policy.fallback_tier
@@ -251,7 +255,7 @@ class ReleaseRunner:
             db,
             gate.AGENT,
             subject_type="release",
-            subject_source=SOURCE,
+            subject_source=self.source,
             subject_id=subject,
             head_sha=sha,
         )
@@ -270,7 +274,7 @@ class ReleaseRunner:
             agent=gate.AGENT,
             agent_version=gate.AGENT_VERSION,
             subject_type="release",
-            subject_source=SOURCE,
+            subject_source=self.source,
             subject_id=subject,
             trigger="poll",
             now=now,

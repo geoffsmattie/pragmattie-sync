@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/ghread.py *)",
+      "Bash(bash scripts/check.sh *)",
+      "Bash(git -C ../pragmattie-sync-agentic status *)",
+      "Bash(git -C ../pragmattie-sync-agentic log *)",
+      "Bash(git -C ../pragmattie-sync-agentic diff *)",
+      "Bash(docker compose exec -T orchestrator python -m sdlc.peek *)",
+      "Bash(docker compose logs *)",
+      "Bash(docker compose ps *)",
+      "Bash(docker compose --profile agents ps *)",
+      "Bash(docker compose --profile agents logs *)",
+      "mcp__claude_ai_Claude_Docs__read",
+      "mcp__Claude_Browser__find",
+      "mcp__claude-in-chrome__read_console_messages"
+    ]
+  }
+}

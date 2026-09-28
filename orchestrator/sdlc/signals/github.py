@@ -61,9 +61,10 @@ def labels_of(item: dict) -> dict[str, str]:
 
 
 class Collector:
-    def __init__(self, db: Session, client: GitHubClient):
+    def __init__(self, db: Session, client: GitHubClient, source: str = SOURCE):
         self.db = db
         self.gh = client
+        self.source = source  # "github" for v1's own repository, "agentic" for the rebuild
         self._engineers: dict[str, Engineer] = {}
 
     def engineer(self, user: dict | None) -> Engineer | None:
@@ -72,10 +73,10 @@ class Collector:
         login = user["login"]
         if login not in self._engineers:
             found = self.db.scalar(
-                select(Engineer).where(Engineer.source == SOURCE, Engineer.login == login)
+                select(Engineer).where(Engineer.source == self.source, Engineer.login == login)
             )
             if not found:
-                found = Engineer(login=login, name=login, source=SOURCE)
+                found = Engineer(login=login, name=login, source=self.source)
                 self.db.add(found)
                 self.db.flush()
             self._engineers[login] = found
@@ -83,10 +84,10 @@ class Collector:
 
     def _upsert(self, model, external_id: str, **values):
         row = self.db.scalar(
-            select(model).where(model.source == SOURCE, model.external_id == external_id)
+            select(model).where(model.source == self.source, model.external_id == external_id)
         )
         if row is None:
-            row = model(source=SOURCE, external_id=external_id)
+            row = model(source=self.source, external_id=external_id)
             self.db.add(row)
         for key, value in values.items():
             setattr(row, key, value)
@@ -148,7 +149,7 @@ class Collector:
         if linked:
             issue = self.db.scalar(
                 select(Issue).where(
-                    Issue.source == SOURCE, Issue.external_id == f"issue-{linked[1]}"
+                    Issue.source == self.source, Issue.external_id == f"issue-{linked[1]}"
                 )
             )
         merged_at = parse_time(detail.get("merged_at"))
@@ -192,7 +193,7 @@ class Collector:
             if run.get("pull_requests"):
                 pr = self.db.scalar(
                     select(PullRequest).where(
-                        PullRequest.source == SOURCE,
+                        PullRequest.source == self.source,
                         PullRequest.external_id == f"pr-{run['pull_requests'][0]['number']}",
                     )
                 )
@@ -241,7 +242,7 @@ class Collector:
                 seen.add(external_id)
                 known = self.db.scalar(
                     select(Deployment).where(
-                        Deployment.source == SOURCE, Deployment.external_id == external_id
+                        Deployment.source == self.source, Deployment.external_id == external_id
                     )
                 )
                 if known:
@@ -260,7 +261,7 @@ class Collector:
                     )
         gone = [
             d
-            for d in self.db.scalars(select(Deployment).where(Deployment.source == SOURCE))
+            for d in self.db.scalars(select(Deployment).where(Deployment.source == self.source))
             if d.external_id not in seen
         ]
         for d in gone:
@@ -279,7 +280,7 @@ class Collector:
         deploys = sorted(
             self.db.scalars(
                 select(Deployment).where(
-                    Deployment.source == SOURCE, Deployment.status == "success"
+                    Deployment.source == self.source, Deployment.status == "success"
                 )
             ),
             key=lambda d: d.deployed_at,

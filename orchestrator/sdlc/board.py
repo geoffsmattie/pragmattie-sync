@@ -211,7 +211,7 @@ def build_board(
     sprint: str | None = None,
     module: str | None = None,
     owner: str | None = None,
-    source: str | None = None,  # "synthetic" | "github" | None for both
+    source: str | None = None,  # "synthetic" | "github" | "agentic" | None for v1's two
 ) -> Board:
     now = now or datetime.now().replace(microsecond=0)
     engineers = {e.id: e for e in db.scalars(select(Engineer))}
@@ -276,6 +276,8 @@ def build_board(
         cards = [c for c in cards if c.owner == owner]
     if source:
         cards = [c for c in cards if c.source == source]
+    else:  # the rebuild has its own board on GitHub; v1's board shows it only when asked
+        cards = [c for c in cards if c.source != "agentic"]
 
     return Board(cards=tuple(cards), columns=_column_stats(cards, now), generated_at=now)
 

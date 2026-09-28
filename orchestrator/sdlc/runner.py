@@ -78,8 +78,16 @@ INPUT_RATE, OUTPUT_RATE = 2.0, 10.0
 
 
 class Runner:
-    def __init__(self, gh: GitHubClient, llm: StructuredLLM, policy: Policy, mode: str):
+    def __init__(
+        self,
+        gh: GitHubClient,
+        llm: StructuredLLM,
+        policy: Policy,
+        mode: str,
+        source: str = "github",
+    ):
         self.gh = gh
+        self.source = source  # "github" for v1's own repository, "agentic" for the rebuild
         self.llm = llm
         self.policy = policy
         self.mode = mode
@@ -109,7 +117,7 @@ class Runner:
             self._last_settle = now
             try:
                 with SessionLocal() as db:
-                    summary["ci_results"] = suite_selector.settle(db, self.gh, now)
+                    summary["ci_results"] = suite_selector.settle(db, self.gh, now, self.source)
                     db.commit()
             except GitHubError as err:
                 summary["errors"] += 1
@@ -119,7 +127,7 @@ class Runner:
     def _handle(self, item: dict, now: datetime, summary: dict) -> None:
         number, sha = item["number"], item["head"]["sha"]
         with SessionLocal() as db:
-            pr = Collector(db, self.gh).collect_pull_request(item)
+            pr = Collector(db, self.gh, self.source).collect_pull_request(item)
             decisions = decisions_for(
                 db,
                 AGENT,
@@ -435,6 +443,7 @@ def main(argv: list[str] | None = None) -> None:
             runner_mode,
         )
         release = ReleaseRunner(gh, runner.policy, runner_mode)
+        rebuild = _rebuild_agents(settings, runner.policy, runner_mode)
     except GitHubError as err:
         raise SystemExit(str(err)) from err
 
@@ -448,14 +457,16 @@ def main(argv: list[str] | None = None) -> None:
                 "forecaster": forecaster.poll_once(),
                 "planner": planner.poll_once(),
                 "release_gate": release.poll_once(),
+                **{name: agent.poll_once() for name, agent in rebuild},
             }
         )
     else:
         log.info(
             "risk, triage, forecaster, planner and release gate agents started in %s mode, "
-            "polling every %ss",
+            "polling every %ss%s",
             runner_mode,
             settings.poll_seconds,
+            f", also governing {settings.github_repo_agentic}" if rebuild else "",
         )
         while True:
             agents = (
@@ -464,6 +475,7 @@ def main(argv: list[str] | None = None) -> None:
                 ("forecaster", forecaster),  # before the planner: it reads the saved forecast
                 ("planner", planner),
                 ("release_gate", release),
+                *rebuild,
             )
             for name, agent in agents:
                 try:
@@ -473,6 +485,26 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception:  # noqa: BLE001 - one bad poll must not stop the loop or the other agent
                     log.exception("%s poll failed", name)
             time.sleep(settings.poll_seconds)
+
+
+def _rebuild_agents(settings, policy: Policy, mode: str) -> list[tuple[str, object]]:
+    """The same governance for the agentic rebuild's repository (source "agentic"), plus the
+    implementer's run records. Only when its token is configured."""
+    if not settings.github_token_agentic:
+        return []
+    from sdlc.agent_runs import AgentRunCollector
+
+    gh = GitHubClient(token=settings.github_token_agentic, repo=settings.github_repo_agentic)
+    source = "agentic"
+    return [
+        ("rebuild:pr_risk", Runner(gh, StructuredLLM(), policy, mode, source)),
+        (
+            "rebuild:triage",
+            IssueRunner(gh, StructuredLLM(model=settings.triage_model), mode, source),
+        ),
+        ("rebuild:release_gate", ReleaseRunner(gh, policy, mode, source)),
+        ("rebuild:implementer_runs", AgentRunCollector(gh, mode, source)),
+    ]
 
 
 def _look(runner: Runner, args) -> None:

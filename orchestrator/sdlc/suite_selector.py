@@ -108,11 +108,16 @@ def latest_recommendation(db: Session, pr: PullRequest, sha: str) -> AgentDecisi
 # --- the track record ------------------------------------------------------------------------
 
 
-def unsettled(db: Session, now: datetime) -> list[AgentDecision]:
-    """The latest recommendation for each recent commit that has no CI result recorded yet."""
+def unsettled(db: Session, now: datetime, source: str = "github") -> list[AgentDecision]:
+    """The latest recommendation for each recent commit of one repository (`source`) that has no
+    CI result recorded yet."""
     rows = db.scalars(
         select(AgentDecision)
-        .where(AgentDecision.agent == AGENT, AgentDecision.created_at >= now - SETTLE_WINDOW)
+        .where(
+            AgentDecision.agent == AGENT,
+            AgentDecision.subject_source == source,
+            AgentDecision.created_at >= now - SETTLE_WINDOW,
+        )
         .order_by(AgentDecision.id)
     )
     latest: dict[tuple, AgentDecision] = {}
@@ -162,10 +167,11 @@ def _seconds(job: dict) -> int:
     return int((finished - started).total_seconds()) if started and finished else 0
 
 
-def settle(db: Session, gh: GitHubClient, now: datetime) -> int:
-    """Record the CI result for every recommendation whose commit has finished CI."""
+def settle(db: Session, gh: GitHubClient, now: datetime, source: str = "github") -> int:
+    """Record the CI result for every recommendation whose commit has finished CI, for the
+    repository `gh` talks to (`source` names its rows)."""
     recorded = 0
-    for rec in unsettled(db, now):
+    for rec in unsettled(db, now, source):
         results = ci_results(gh, rec.head_sha)
         if results is None:
             continue

@@ -90,7 +90,7 @@ def board(
     sprint: str | None = None,  # "current" (default client-side), "all", or a sprint name
     module: str | None = None,
     owner: str | None = None,
-    source: Literal["synthetic", "github"] | None = None,
+    source: Literal["synthetic", "github", "agentic"] | None = None,
 ) -> dict:
     return board_module.serialize(
         board_module.build_board(
@@ -130,7 +130,7 @@ def decisions(
     db: DB,
     agent: str | None = None,
     subject_type: Literal["pr", "issue", "sprint", "epic", "release"] | None = None,
-    subject_source: Literal["synthetic", "github", "mixed"] | None = None,
+    subject_source: Literal["synthetic", "github", "agentic", "mixed"] | None = None,
     status: Literal["ok", "error", "rejected", "missed"] | None = None,
     tier: str | None = None,
     limit: int = Query(50, ge=1, le=200),

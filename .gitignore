@@ -17,6 +17,9 @@ dist/
 *.local
 # Safety net: stray text files holding API keys (real keys belong in .env)
 *key*.txt
+# and private keys, such as a GitHub App's downloaded .pem
+*.pem
+*.key
 
 # Editors / OS
 .vscode/*

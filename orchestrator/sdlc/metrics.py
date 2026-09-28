@@ -14,6 +14,10 @@ from sqlalchemy.orm import Session
 
 from sdlc.tables import CIRun, Deployment, Incident, Issue, PullRequest, Sprint
 
+# The agentic rebuild's own repository: governed from here, but measured in its own Delivery
+# Insights app, so v1's metrics leave it out.
+REBUILD = "agentic"
+
 
 def _hours(a: datetime, b: datetime) -> float:
     return (b - a).total_seconds() / 3600
@@ -44,20 +48,28 @@ def dora_summary(db: Session, now: datetime, days: int = 30) -> dict:
         deploys = list(
             db.scalars(
                 select(Deployment).where(
-                    Deployment.deployed_at >= start, Deployment.deployed_at < end
+                    Deployment.deployed_at >= start,
+                    Deployment.deployed_at < end,
+                    Deployment.source != REBUILD,
                 )
             )
         )
         prs = list(
             db.scalars(
                 select(PullRequest).where(
-                    PullRequest.merged_at >= start, PullRequest.merged_at < end
+                    PullRequest.merged_at >= start,
+                    PullRequest.merged_at < end,
+                    PullRequest.source != REBUILD,
                 )
             )
         )
         incidents = list(
             db.scalars(
-                select(Incident).where(Incident.opened_at >= start, Incident.opened_at < end)
+                select(Incident).where(
+                    Incident.opened_at >= start,
+                    Incident.opened_at < end,
+                    Incident.source != REBUILD,
+                )
             )
         )
         failed_deploys = {i.deployment_id for i in incidents if i.deployment_id} | {
@@ -89,7 +101,9 @@ def dora_summary(db: Session, now: datetime, days: int = 30) -> dict:
 def sprint_velocity(db: Session, today: date) -> list[dict]:
     """Committed vs completed story points per sprint (completed = closed by sprint end)."""
     sprints = list(db.scalars(select(Sprint).order_by(Sprint.start_date)))
-    issues = list(db.scalars(select(Issue).where(Issue.sprint_id.is_not(None))))
+    issues = list(
+        db.scalars(select(Issue).where(Issue.sprint_id.is_not(None), Issue.source != REBUILD))
+    )
     by_sprint = defaultdict(list)
     for issue in issues:
         by_sprint[issue.sprint_id].append(issue)
@@ -118,7 +132,9 @@ def pr_cycle_time(db: Session, weeks: int, now: datetime) -> list[dict]:
     since = now - timedelta(weeks=weeks)
     prs = db.scalars(
         select(PullRequest).where(
-            PullRequest.merged_at.is_not(None), PullRequest.merged_at >= since
+            PullRequest.merged_at.is_not(None),
+            PullRequest.merged_at >= since,
+            PullRequest.source != REBUILD,
         )
     )
     by_week = defaultdict(list)
@@ -144,7 +160,9 @@ def pr_cycle_time_by_sprint(db: Session, now: datetime) -> list[dict]:
     prs = list(
         db.scalars(
             select(PullRequest).where(
-                PullRequest.merged_at.is_not(None), PullRequest.merged_at >= first
+                PullRequest.merged_at.is_not(None),
+                PullRequest.merged_at >= first,
+                PullRequest.source != REBUILD,
             )
         )
     )
@@ -169,7 +187,7 @@ def pr_cycle_time_by_sprint(db: Session, now: datetime) -> list[dict]:
 def ci_health(db: Session, weeks: int, now: datetime) -> dict:
     """Pass rate and flaky-failure rate per test suite, overall and per week."""
     since = now - timedelta(weeks=weeks)
-    runs = list(db.scalars(select(CIRun).where(CIRun.started_at >= since)))
+    runs = list(db.scalars(select(CIRun).where(CIRun.started_at >= since, CIRun.source != REBUILD)))
     suites = defaultdict(lambda: {"runs": 0, "passed": 0, "flaky": 0})
     weekly = defaultdict(lambda: {"runs": 0, "passed": 0})
     for r in runs:
@@ -206,16 +224,20 @@ def quality_by_module(db: Session) -> list[dict]:
             # Cast: summing a Boolean column would otherwise come back as a bool.
             func.sum(cast(PullRequest.caused_incident, Integer)),
         )
-        .where(PullRequest.state == "merged")
+        .where(PullRequest.state == "merged", PullRequest.source != REBUILD)
         .group_by(PullRequest.module)
     ).all()
     incidents = dict(
-        db.execute(select(Incident.module, func.count()).group_by(Incident.module)).all()
+        db.execute(
+            select(Incident.module, func.count())
+            .where(Incident.source != REBUILD)
+            .group_by(Incident.module)
+        ).all()
     )
     by_module = defaultdict(lambda: [0.0, 0])
     for module, points, days in db.execute(
         select(Issue.module, Issue.estimate_points, Issue.actual_days).where(
-            Issue.actual_days.is_not(None), Issue.estimate_points > 0
+            Issue.actual_days.is_not(None), Issue.estimate_points > 0, Issue.source != REBUILD
         )
     ):
         by_module[module][0] += days
