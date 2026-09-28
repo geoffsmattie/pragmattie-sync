@@ -5,9 +5,11 @@ Only ever SELECTs. Allowlisted in .claude/settings.json so these checks need no 
     python -m sdlc.peek decisions [AGENT] [SOURCE] [N]   # latest audit rows (default: all, all, 20)
     python -m sdlc.peek runs                             # the rebuild implementer's runs and costs
     python -m sdlc.peek counts                           # rows per agent and source
+    python -m sdlc.peek wait AGENT SOURCE AFTER_ID [MIN] # wait for a row newer than AFTER_ID
 """
 
 import sys
+import time
 
 from sqlalchemy import func, select
 
@@ -56,8 +58,28 @@ def counts(db) -> None:
         print(f"{agent:<16} {source:<10} {n}")
 
 
+def wait(agent: str, source: str, after_id: int, minutes: float) -> None:
+    """Block until the agent writes a row newer than after_id (or time runs out), then show it."""
+    deadline = time.time() + 60 * minutes
+    while time.time() < deadline:
+        with SessionLocal() as db:
+            newest = db.scalar(
+                select(func.max(AgentDecision.id)).where(
+                    AgentDecision.agent == agent, AgentDecision.subject_source == source
+                )
+            )
+            if newest and newest > after_id:
+                decisions(db, "all", source, 6)
+                return
+        time.sleep(10)
+    print(f"no new {agent} row after {after_id} within {minutes:g} minutes")
+
+
 def main(argv: list[str]) -> None:
     cmd = argv[0] if argv else ""
+    if cmd == "wait":
+        wait(argv[1], argv[2], int(argv[3]), float(argv[4]) if len(argv) > 4 else 10)
+        return
     with SessionLocal() as db:
         if cmd == "decisions":
             limit = int(argv[3]) if len(argv) > 3 else 20
