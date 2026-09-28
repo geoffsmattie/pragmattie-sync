@@ -101,7 +101,8 @@ class IssueRunner:
         version = content_version(title, body)
 
         with SessionLocal() as db:
-            labels = self.effects.read_labels(number)
+            # The issue list already carries its current labels: no call per issue per poll.
+            labels = [label["name"] for label in item.get("labels", [])]
             _store_labels(db, number, labels, self.source)
             forced = RETRIAGE_LABEL in labels
             last = latest_decision(
