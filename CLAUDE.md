@@ -556,7 +556,7 @@ Geoff's direction: the project is **rebuilt entirely by agents**, with Geoff as 
 manager / product manager and, later, one or two human developers in the loop where risk calls
 for a person. Decided with Geoff:
 
-- **A new public repository, `geoffsmattie/pragmattie-sync-agentic`**, built from scratch by agents.
+- **A new public repository, `pragmattie/pragmattie-sync-agentic`**, built from scratch by agents.
   This repository (v1) stays the working demo until the rebuild overtakes it.
 - **v1 governs v2:** this repo's agents (triage, PR risk, test selector, release gate, accuracy)
   are pointed at the new repository, so every agent PR there is tiered, gated and audited here.
@@ -564,10 +564,21 @@ for a person. Decided with Geoff:
 - **Runs in GitHub** (permanent change to the local-only rule): the implementer agent runs in
   GitHub Actions on the new repo; the local stack stays as an emergency fallback and hosts v1's
   governance for now.
+- **Stays public, "all rights reserved"** (Geoff, 2026-09-28): no open-source licence, so the code is
+  readable but not reusable. Private was ruled out because, short of GitHub Enterprise, required
+  reviewers on environments (the T3 Approve deployment button) exist only on public repos, and our
+  app can update a Projects board only in an organization. Public repos also get unlimited Actions
+  minutes (private: 3,000/month on Pro).
+- **The sprint board moves to a GitHub Projects board** and the development metrics to a separate
+  **Delivery Insights** app; the CRM app shows only the product (decided 2026-09-27, details in the
+  rebuild plan). The repo moves into a free GitHub organization, **`pragmattie`** (Geoff,
+  2026-09-28), so the app can update the board. **The separation applies to the rebuild only;** v1
+  keeps its single app. Plan approved 2026-09-28 (82 issues): clean room, parity by default and
+  redesign by decision.
 - **A GitHub App** gives the agents their own identity (Geoff gave permission), so their PRs aren't
   authored by Geoff and he can approve them with real GitHub reviews.
-- **Models:** Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the workflow (the rule lives in
-  `tiers.yaml`): a `model:opus`/`model:sonnet` label on the issue wins, then the PR's actual tier, then
+- **Models:** Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the rebuild's
+  `.github/workflows/implement.yml` (moves to its `tiers.yaml` at M4): a `model:opus`/`model:sonnet` label on the issue wins, then the PR's actual tier, then
   the issue's `forecast:Tn` label. Every run's model is in the audit trail. **No automatic step-up to
   Opus after a failed Sonnet run** (Geoff, 2026-09-27). **Reminder:** issue #1 in the agentic repo,
   assigned to Geoff, to re-evaluate at the M1 gate, after 20 agent runs, or after 3 Sonnet failures
@@ -581,5 +592,21 @@ for a person. Decided with Geoff:
 - **Order:** (1) setup: repo, GitHub App, secrets (Geoff's clicks); (2) the rebuild plan: the current
   system turned into an ordered backlog of specs, **approved by Geoff before any code is written**;
   (3) the implementer workflow, run on 2-3 small issues first, with measured cost reported.
-- **TODO:** how v1's collectors and agents handle a second repository (today `GITHUB_REPO` is one
-  repo); the human developers' GitHub usernames (they would replace the simulated second approver).
+- **v1 governs the rebuild (built 2026-09-28, branch `phase-7-agentic-governance`).** The
+  rebuild's rows use **`source = agentic`** (alongside `synthetic` and `github`), so its issue and PR
+  numbers never collide with v1's. `GITHUB_TOKEN_AGENTIC` (a second fine-grained token owned by the
+  `pragmattie` organization) and `github_repo_agentic` in `sdlc/config.py` switch it on; without the
+  token only v1's own repository is governed. The poll loop then runs a second set:
+  `rebuild:pr_risk`, `rebuild:triage`, `rebuild:release_gate` (idle until the rebuild has a deploy
+  workflow) and `rebuild:implementer_runs`. Each runner and the `Collector` take a `source`; the
+  test selector settles CI per source with that repository's client.
+  - **Implementer runs in the audit trail** (`sdlc/agent_runs.py`): the rebuild's workflow posts
+    `<!-- pragmattie-run {...} -->` on the issue after each run; only `github-actions[bot]`
+    comments count. One row per run: `agent = implementer`, `subject_source = agentic`,
+    `head_sha = run-<id>`, model, tokens, cost (in `output`), `status` ok or error.
+  - **v1's own pages leave the rebuild out:** metrics (`REBUILD` filter), the board (unless asked
+    for `source=agentic`) and the risk calibration. The decision log shows rebuild rows as
+    "Rebuild Issue #n", with an "Implementer (rebuild)" agent filter. The rebuild's metrics belong
+    in its own Delivery Insights app.
+- **TODO:** the human developers' GitHub usernames (they would replace the simulated second
+  approver).

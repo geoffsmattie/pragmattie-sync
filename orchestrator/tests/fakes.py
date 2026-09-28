@@ -94,6 +94,7 @@ class FakeGitHub:
         self.jobs: dict[int, list[dict]] = {}  # run id -> its jobs, every attempt
         self.deploy_runs: list[dict] = []  # the deploy workflow's runs, newest first
         self.deployments: list[dict] = []  # {id, sha, environment, statuses: [newest first]}
+        self.repo_comments: list[dict] = []  # GET issues/comments: every issue's, oldest first
         self._ids = 1000
 
     # -- test helpers -------------------------------------------------------------------------
@@ -293,6 +294,8 @@ class FakeGitHub:
         if method == "DELETE" and (m := _re.fullmatch(rf"{base}/deployments/(\d+)", path)):
             self.deployments = [d for d in self.deployments if d["id"] != int(m[1])]
             return httpx.Response(204)
+        if method == "GET" and path == f"{base}/issues/comments":
+            return httpx.Response(200, json=self.repo_comments)
         if method == "GET" and (m := _re.fullmatch(rf"{base}/issues/(\d+)", path)):
             return httpx.Response(200, json=self.issues[int(m[1])])
         if m := _re.fullmatch(rf"{base}/pulls/(\d+)", path):

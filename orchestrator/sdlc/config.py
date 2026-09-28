@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repo: str = ""  # "owner/name", e.g. "geoffsmattie/pragmattie-sync"
     github_api_url: str = "https://api.github.com"
+    # The agentic rebuild, governed from here too (source "agentic"). A second fine-grained token,
+    # owned by the `pragmattie` organization; without it, only v1's own repository is governed.
+    github_token_agentic: str = ""
+    github_repo_agentic: str = "pragmattie/pragmattie-sync-agentic"
 
     # The PR risk agent (Phase 4). Model ids live here, never in code, so any run can be
     # reproduced from its audit row and a model change is a config change.

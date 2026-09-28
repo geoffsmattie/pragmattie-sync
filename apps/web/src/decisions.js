@@ -12,7 +12,9 @@ export function subjectLabel(decision) {
     return decision.subject_id ? `Release up to PR #${decision.subject_id}` : 'Release'
   }
   const kind = decision.subject_type === 'issue' ? 'Issue' : 'PR'
-  return `${kind} #${decision.subject_id}`
+  // The agentic rebuild's repository numbers its own issues and PRs from 1.
+  const where = decision.subject_source === 'agentic' ? 'Rebuild ' : ''
+  return `${where}${kind} #${decision.subject_id}`
 }
 
 // rejected: a person's tier override that the rules turned down (see sdlc/agents/overrides.py)

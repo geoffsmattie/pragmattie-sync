@@ -70,10 +70,11 @@ log = logging.getLogger("sdlc.issue_runner")
 
 
 class IssueRunner:
-    def __init__(self, gh: GitHubClient, llm: StructuredLLM, mode: str):
+    def __init__(self, gh: GitHubClient, llm: StructuredLLM, mode: str, source: str = "github"):
         self.gh = gh
         self.llm = llm
         self.mode = mode
+        self.source = source  # which repository's issues these are
         self.effects = Effects(gh, mode)
 
     def poll_once(self, now: datetime | None = None) -> dict:
@@ -101,16 +102,16 @@ class IssueRunner:
 
         with SessionLocal() as db:
             labels = self.effects.read_labels(number)
-            _store_labels(db, number, labels)
+            _store_labels(db, number, labels, self.source)
             forced = RETRIAGE_LABEL in labels
             last = latest_decision(
-                db, AGENT, subject_type="issue", subject_source="github", subject_id=number
+                db, AGENT, subject_type="issue", subject_source=self.source, subject_id=number
             )
             attempts_here = decisions_for(
                 db,
                 AGENT,
                 subject_type="issue",
-                subject_source="github",
+                subject_source=self.source,
                 subject_id=number,
                 head_sha=version,
             )
@@ -160,7 +161,7 @@ class IssueRunner:
             agent=AGENT,
             agent_version=AGENT_VERSION,
             subject_type="issue",
-            subject_source="github",
+            subject_source=self.source,
             subject_id=number,
             trigger="retriage" if forced else ("edit" if last else "opened"),
             now=now,
@@ -200,10 +201,10 @@ class IssueRunner:
         return [dim for dim in DIMENSIONS if prior[dim] is not None and current[dim] != prior[dim]]
 
 
-def _store_labels(db, number: int, labels: list[str]) -> None:
+def _store_labels(db, number: int, labels: list[str], source: str = "github") -> None:
     """Keep the stored issue's dimension labels as GitHub has them now, so a person's correction
     of the agent's labels shows in the accuracy trend (sdlc/accuracy.py) without another call."""
-    issue = db.scalar(select(Issue).where(Issue.source == "github", Issue.number == number))
+    issue = db.scalar(select(Issue).where(Issue.source == source, Issue.number == number))
     if issue is None:
         return  # not collected yet; the collector stores it with its labels
     for dim, column in (("module", "module"), ("type", "type"), ("priority", "priority")):

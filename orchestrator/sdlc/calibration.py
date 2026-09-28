@@ -45,7 +45,11 @@ def facts_of(pr: PullRequest) -> Facts:
 
 def score_history(db: Session, policy: Policy) -> list[Scored]:
     scored = []
-    for pr in db.scalars(select(PullRequest).where(PullRequest.state == "merged")):
+    # v1's own history only: the agentic rebuild is graded in its own repository.
+    merged = select(PullRequest).where(
+        PullRequest.state == "merged", PullRequest.source != "agentic"
+    )
+    for pr in db.scalars(merged):
         score = score_pull_request(db, pr)
         tier = assign_tier(policy, score.total, facts_of(pr)).tier
         scored.append(Scored(pr.number, score.total, tier, pr.caused_incident))

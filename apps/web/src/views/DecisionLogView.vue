@@ -96,6 +96,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'Test selector', value: 'test_selector' },
             { title: 'Tier overrides', value: 'tier_override' },
             { title: 'Release gate', value: 'release_gate' },
+            { title: 'Implementer (rebuild)', value: 'implementer' },
           ]"
           label="Agent"
           density="compact"

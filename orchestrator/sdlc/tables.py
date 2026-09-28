@@ -33,7 +33,7 @@ MODULES = (
     "orchestrator",
     "platform",
 )
-SOURCES = ("synthetic", "github")
+SOURCES = ("synthetic", "github", "agentic")  # agentic: the rebuild repository
 
 
 class Engineer(Base):
@@ -216,7 +216,7 @@ class AgentDecision(Base):
     prompt_version: Mapped[str | None] = mapped_column(String(20))
     prompt_hash: Mapped[str | None] = mapped_column(String(64))
     subject_type: Mapped[str] = mapped_column(String(10))  # pr | issue | sprint | epic | release
-    subject_source: Mapped[str] = mapped_column(String(20))  # synthetic | github
+    subject_source: Mapped[str] = mapped_column(String(20))  # synthetic | github | agentic
     subject_id: Mapped[int] = mapped_column(Integer, index=True)  # the PR or issue number
     head_sha: Mapped[str | None] = mapped_column(String(40))  # the commit scored
     attempt: Mapped[int] = mapped_column(Integer, default=1)  # 2, 3... after a failed run
