@@ -12,13 +12,15 @@ the repo's .env and never prints them.
     python scripts/ghread.py [--v1] pulls [STATE]         # pull requests
     python scripts/ghread.py [--v1] commits PR            # a PR's commits: author, committer, message
     python scripts/ghread.py [--v1] files PR [--patch]    # a PR's changed files (and their diffs)
-    python scripts/ghread.py ratelimit                    # API calls left this hour (both tokens share it)
+    python scripts/ghread.py [--v1] wait [MINUTES]        # wait for the newest run to finish (default 15)
+    python scripts/ghread.py ratelimit                   # API calls left this hour (both tokens share it)
 Without --v1 it reads pragmattie/pragmattie-sync-agentic (the rebuild).
 """
 
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -81,6 +83,14 @@ def main(argv: list[str]) -> None:
     if cmd == "runs":
         for r in get(repo, token, f"/actions/runs?per_page={rest[0] if rest else 10}")["workflow_runs"]:
             print(r["id"], r["name"], r["event"], r["status"], r["conclusion"], r["head_branch"], r["created_at"])
+    elif cmd == "wait":
+        deadline = time.time() + 60 * float(rest[0] if rest else 15)
+        while True:
+            r = get(repo, token, "/actions/runs?per_page=1")["workflow_runs"][0]
+            if r["status"] == "completed" or time.time() > deadline:
+                break
+            time.sleep(20)
+        print(r["id"], r["name"], r["event"], r["status"], r["conclusion"], r["head_branch"], r["created_at"])
     elif cmd == "jobs":
         for j in get(repo, token, f"/actions/runs/{rest[0]}/jobs")["jobs"]:
             print("job", j["id"], j["name"], j["conclusion"])
