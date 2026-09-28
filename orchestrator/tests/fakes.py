@@ -97,6 +97,12 @@ class FakeGitHub:
         self.repo_comments: list[dict] = []  # GET issues/comments: every issue's, oldest first
         self._ids = 1000
 
+    def _with_labels(self, issue: dict) -> dict:
+        """An issue as GitHub lists it: its own labels plus any added through the labels API."""
+        added = self.labels.get(issue["number"], set())
+        names = {x["name"] for x in issue.get("labels", [])} | added
+        return {**issue, "labels": [{"name": n} for n in sorted(names)]}
+
     # -- test helpers -------------------------------------------------------------------------
 
     def open_pr(
@@ -266,9 +272,9 @@ class FakeGitHub:
                 200,
                 json=[
                     i
-                    for i in self.issues.values()
+                    for i in map(self._with_labels, self.issues.values())
                     if (want == "all" or i["state"] == want)
-                    and (not label or label in {x["name"] for x in i.get("labels", [])})
+                    and (not label or label in {x["name"] for x in i["labels"]})
                 ],
             )
         if method == "GET" and (m := _re.fullmatch(rf"{base}/commits/(\w+)/pulls", path)):

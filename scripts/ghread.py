@@ -10,6 +10,9 @@ the repo's .env and never prints them.
     python scripts/ghread.py [--v1] comments N [LAST]     # an issue's comments (the last LAST)
     python scripts/ghread.py [--v1] issues [STATE]        # issues: number, state, title, labels
     python scripts/ghread.py [--v1] pulls [STATE]         # pull requests
+    python scripts/ghread.py [--v1] commits PR            # a PR's commits: author, committer, message
+    python scripts/ghread.py [--v1] files PR [--patch]    # a PR's changed files (and their diffs)
+    python scripts/ghread.py ratelimit                    # API calls left this hour (both tokens share it)
 Without --v1 it reads pragmattie/pragmattie-sync-agentic (the rebuild).
 """
 
@@ -40,8 +43,13 @@ def get(repo: str, token: str, path: str, raw: bool = False):
     url = f"https://api.github.com/repos/{repo}{path}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
     if not raw:
-        with urllib.request.urlopen(req) as r:
-            return json.loads(r.read())
+        try:
+            with urllib.request.urlopen(req) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as err:
+            reason = err.read().decode("utf-8", "replace")[:300]
+            left = err.headers.get("X-RateLimit-Remaining")
+            raise SystemExit(f"GitHub {err.code} on {path}: {reason} (rate limit left: {left})")
     try:  # logs redirect to storage that must not receive the GitHub token
         urllib.request.build_opener(_NoRedirect).open(req)
     except urllib.error.HTTPError as err:
@@ -62,6 +70,14 @@ def main(argv: list[str]) -> None:
     repo = repo or env("GITHUB_REPO")
     token = env(token_name)
     cmd, rest = args[0], args[1:]
+    if cmd == "ratelimit":
+        req = urllib.request.Request(
+            "https://api.github.com/rate_limit", headers={"Authorization": f"Bearer {token}"}
+        )
+        with urllib.request.urlopen(req) as r:
+            core = json.loads(r.read())["resources"]["core"]
+        print(f"{core['remaining']} of {core['limit']} left, used {core['used']}, resets {core['reset']}")
+        return
     if cmd == "runs":
         for r in get(repo, token, f"/actions/runs?per_page={rest[0] if rest else 10}")["workflow_runs"]:
             print(r["id"], r["name"], r["event"], r["status"], r["conclusion"], r["head_branch"], r["created_at"])
@@ -85,6 +101,16 @@ def main(argv: list[str]) -> None:
         comments = get(repo, token, f"/issues/{rest[0]}/comments?per_page=100")
         for c in comments[-int(rest[1]):] if len(rest) > 1 else comments:
             print(f"--- {c['user']['login']} {c['created_at']}\n{c['body']}")
+    elif cmd == "commits":
+        for c in get(repo, token, f"/pulls/{rest[0]}/commits?per_page=100"):
+            author = (c.get("author") or {}).get("login") or c["commit"]["author"]["name"]
+            committer = (c.get("committer") or {}).get("login") or c["commit"]["committer"]["name"]
+            print(c["sha"][:8], f"author={author} committer={committer}", c["commit"]["message"].splitlines()[0])
+    elif cmd == "files":
+        for f in get(repo, token, f"/pulls/{rest[0]}/files?per_page=100"):
+            print(f"{f['status']:<9} +{f['additions']:<4} -{f['deletions']:<4} {f['filename']}")
+            if "--patch" in rest:
+                print(f.get("patch") or "(no diff shown)")
     elif cmd in ("issues", "pulls"):
         state = rest[0] if rest else "open"
         for i in get(repo, token, f"/{cmd}?state={state}&per_page=100"):
