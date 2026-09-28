@@ -566,7 +566,13 @@ for a person. Decided with Geoff:
   governance for now.
 - **A GitHub App** gives the agents their own identity (Geoff gave permission), so their PRs aren't
   authored by Geoff and he can approve them with real GitHub reviews.
-- **Models:** Sonnet 5 by default; Opus 5.5 for issues planned as T3.
+- **Models:** Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the workflow (the rule lives in
+  `tiers.yaml`): a `model:opus`/`model:sonnet` label on the issue wins, then the PR's actual tier, then
+  the issue's `forecast:Tn` label. Every run's model is in the audit trail. **No automatic step-up to
+  Opus after a failed Sonnet run** (Geoff, 2026-09-27). **Reminder:** issue #1 in the agentic repo,
+  assigned to Geoff, to re-evaluate at the M1 gate, after 20 agent runs, or after 3 Sonnet failures
+  in a row; the implementer workflow must comment there on every Sonnet run that ends with failing
+  tests. When any of those triggers is reached, remind Geoff.
 - **Budget:** $100/month for the first month as a pilot (hard limit in the Anthropic Console, plus
   per-run and daily caps in code, every run an audit row), then decided from measured cost per
   issue. Estimate for the whole rebuild (~22k lines, 70-100 issues): $250-500 on Sonnet 5; about
