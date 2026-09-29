@@ -111,6 +111,10 @@ def main(argv: list[str]) -> None:
         comments = get(repo, token, f"/issues/{rest[0]}/comments?per_page=100")
         for c in comments[-int(rest[1]):] if len(rest) > 1 else comments:
             print(f"--- {c['user']['login']} {c['created_at']}\n{c['body']}")
+    elif cmd == "pull":
+        p = get(repo, token, f"/pulls/{rest[0]}")
+        print(f"#{p['number']} [{p['state']}] merged={p['merged']} mergeable={p['mergeable']} "
+              f"state={p['mergeable_state']} head={p['head']['ref']} {p['title']}")
     elif cmd == "commits":
         for c in get(repo, token, f"/pulls/{rest[0]}/commits?per_page=100"):
             author = (c.get("author") or {}).get("login") or c["commit"]["author"]["name"]

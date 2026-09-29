@@ -18,7 +18,9 @@ PATH_MODULES = [
     (re.compile(r"^orchestrator/"), "orchestrator"),
 ]
 
-MIGRATION_DIR = "alembic/versions/"
+# Alembic revision files, under either conventional folder name: v1 uses alembic/versions/, the
+# rebuild's agents chose migrations/versions/. A miss here drops the T3 floor for schema changes.
+MIGRATION_DIR = re.compile(r"(^|/)(alembic|migrations)/versions/")
 
 TEST_FILE = re.compile(r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]*\.py$|\.(spec|test)\.[jt]sx?$")
 
@@ -70,7 +72,7 @@ def is_docs_or_config(path: str) -> bool:
 
 def classify_files(paths: list[str]) -> FileFacts:
     return FileFacts(
-        touches_migration=any(MIGRATION_DIR in p for p in paths),
+        touches_migration=any(MIGRATION_DIR.search(p) for p in paths),
         test_files_changed=sum(is_test_file(p) for p in paths),
         docs_only=bool(paths) and all(is_docs_or_config(p) for p in paths),
         modules_touched=len({m for p in paths if (m := module_of(p))}) or 1,

@@ -38,6 +38,14 @@ def test_migrations_are_detected():
     assert facts.touches_migration and not facts.docs_only
 
 
+def test_migrations_folder_named_migrations_is_detected_too():
+    # The rebuild keeps its Alembic revisions in migrations/versions/ (PR #97 there scored T1).
+    assert classify_files(["orchestrator/migrations/versions/0001_initial.py"]).touches_migration
+    assert classify_files(["apps/api/migrations/versions/0001_initial.py"]).touches_migration
+    assert not classify_files(["apps/api/migrations/env.py"]).touches_migration
+    assert not classify_files(["docs/versions/notes.md"]).touches_migration
+
+
 def test_modules_touched_counts_distinct_modules_and_is_at_least_one():
     paths = [
         "apps/web/src/views/LeadsView.vue",
