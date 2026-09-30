@@ -115,6 +115,11 @@ def main(argv: list[str]) -> None:
         p = get(repo, token, f"/pulls/{rest[0]}")
         print(f"#{p['number']} [{p['state']}] merged={p['merged']} mergeable={p['mergeable']} "
               f"state={p['mergeable_state']} merged_at={p['merged_at']} head={p['head']['ref']} {p['title']}")
+    elif cmd == "rules":
+        for rule in get(repo, token, f"/rules/branches/{rest[0] if rest else 'main'}"):
+            params = rule.get("parameters") or {}
+            checks = [c["context"] for c in params.get("required_status_checks", [])]
+            print(rule["type"], checks or {k: v for k, v in params.items() if not isinstance(v, list)})
     elif cmd == "commits":
         for c in get(repo, token, f"/pulls/{rest[0]}/commits?per_page=100"):
             author = (c.get("author") or {}).get("login") or c["commit"]["author"]["name"]

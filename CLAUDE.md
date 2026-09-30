@@ -608,5 +608,12 @@ for a person. Decided with Geoff:
     for `source=agentic`) and the risk calibration. The decision log shows rebuild rows as
     "Rebuild Issue #n", with an "Implementer (rebuild)" agent filter. The rebuild's metrics belong
     in its own Delivery Insights app.
+- **M0 complete (2026-09-30):** 0.2–0.8 built by agents, CI live with four required checks on the
+  agentic repo's `main`, about $5.41 of agent spend.
+- **M1 specs written into issues #11–#21 (2026-09-30)**, from v1's behaviour (parity). **1.5
+  "Activities and the account timeline" moved to the "next" list** (Geoff: it isn't in v1), #15
+  closed as not planned; 2.5 drops "timeline" too. M1 runs strictly in order (1.1, 1.2, 1.3, 1.4,
+  1.6, 1.7, 1.8, 1.9, 1.10, 1.11) because each migration builds on the one before. Specs are
+  written with `scripts/ghwrite.py` (issues only: body, comment, close, labels).
 - **TODO:** the human developers' GitHub usernames (they would replace the simulated second
   approver).
