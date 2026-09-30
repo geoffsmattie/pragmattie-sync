@@ -94,7 +94,7 @@ def tier_of(db: Session, policy: Policy, pr: PullRequest) -> str:
     )
     if decided and decided.tier:
         return decided.tier
-    facts = Facts(pr.module, pr.touches_migration, pr.docs_only)
+    facts = Facts(pr.module, pr.touches_migration, pr.docs_only, pr.touches_governance)
     return assign_tier(policy, score_pull_request(db, pr).total, facts).tier
 
 

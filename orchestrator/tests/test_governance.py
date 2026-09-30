@@ -6,8 +6,10 @@ from sdlc.tiers import load_policy
 POLICY = load_policy()
 
 
-def facts(module="leads", migration=False, docs=False) -> Facts:
-    return Facts(module=module, touches_migration=migration, docs_only=docs)
+def facts(module="leads", migration=False, docs=False, governance=False) -> Facts:
+    return Facts(
+        module=module, touches_migration=migration, docs_only=docs, touches_governance=governance
+    )
 
 
 @pytest.mark.parametrize(
@@ -39,6 +41,7 @@ def test_a_plain_pr_gets_its_score_band():
         ({"migration": True}, "T3", "schema_migration"),
         ({"module": "pipeline"}, "T2", "pipeline_or_forecasting"),
         ({"module": "forecasting"}, "T2", "pipeline_or_forecasting"),
+        ({"governance": True}, "T2", "governance_files"),  # a CI workflow or a policy file
     ],
 )
 def test_floors_raise_a_low_score(kwargs, tier, floor):

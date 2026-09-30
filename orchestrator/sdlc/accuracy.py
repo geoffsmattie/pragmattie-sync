@@ -159,7 +159,7 @@ def risk_accuracy(db: Session, policy: Policy) -> dict:
         )
         if sprint is None:
             continue
-        facts = Facts(pr.module, pr.touches_migration, pr.docs_only)
+        facts = Facts(pr.module, pr.touches_migration, pr.docs_only, pr.touches_governance)
         tier = assign_tier(policy, score_pull_request(db, pr).total, facts).tier
         row = per[sprint.name]
         row["prs"] += 1

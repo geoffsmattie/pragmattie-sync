@@ -13,7 +13,7 @@ POLICY = Path(__file__).resolve().parent.parent / "policies" / "tiers.yaml"
 TIER_IDS = ("T0", "T1", "T2", "T3")  # lowest to highest
 AGENT_CHECKS = ("passes_alone", "passes_after_approvals", "reports_only")
 RELEASE_MODES = ("automatic", "checks", "signoff")  # what the release gate asks of a tier
-WHEN_KEYS = {"modules", "touches_migration", "docs_only"}
+WHEN_KEYS = {"modules", "touches_migration", "docs_only", "touches_governance"}
 
 
 class PolicyError(Exception):

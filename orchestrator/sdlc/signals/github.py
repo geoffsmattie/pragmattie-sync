@@ -167,6 +167,7 @@ class Collector:
             additions=detail.get("additions", 0),
             deletions=detail.get("deletions", 0),
             touches_migration=facts.touches_migration,
+            touches_governance=facts.touches_governance,
             test_files_changed=facts.test_files_changed,
             docs_only=facts.docs_only,
             modules_touched=facts.modules_touched,

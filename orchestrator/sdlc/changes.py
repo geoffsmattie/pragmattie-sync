@@ -35,6 +35,7 @@ GOVERNANCE_PATHS = ("orchestrator/policies/", ".github/workflows/")
 @dataclass(frozen=True)
 class FileFacts:
     touches_migration: bool
+    touches_governance: bool  # CI workflows or governance policies: what decides and checks
     test_files_changed: int
     docs_only: bool  # docs, copy or config only (a tier T0 candidate)
     modules_touched: int
@@ -73,6 +74,7 @@ def is_docs_or_config(path: str) -> bool:
 def classify_files(paths: list[str]) -> FileFacts:
     return FileFacts(
         touches_migration=any(MIGRATION_DIR.search(p) for p in paths),
+        touches_governance=any(p.startswith(GOVERNANCE_PATHS) for p in paths),
         test_files_changed=sum(is_test_file(p) for p in paths),
         docs_only=bool(paths) and all(is_docs_or_config(p) for p in paths),
         modules_touched=len({m for p in paths if (m := module_of(p))}) or 1,

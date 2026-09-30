@@ -476,7 +476,7 @@ def _deploy(db: Session, merged: list[PullRequest], now: datetime, seed: int):
 
     def tier_of(pr: PullRequest) -> str:
         if pr.id not in tiers:  # scored when first released: every earlier incident is known
-            facts = Facts(pr.module, pr.touches_migration, pr.docs_only)
+            facts = Facts(pr.module, pr.touches_migration, pr.docs_only, pr.touches_governance)
             tiers[pr.id] = assign_tier(policy, score_pull_request(db, pr).total, facts).tier
         return tiers[pr.id]
 

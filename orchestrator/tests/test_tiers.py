@@ -14,6 +14,7 @@ def test_policy_matches_the_blueprint_and_claude_md():
         "billing_auth": "T3",
         "schema_migration": "T3",
         "pipeline_or_forecasting": "T2",
+        "governance_files": "T2",
     }
     assert [(r.name, r.tier) for r in policy.caps] == [("docs_or_config_only", "T0")]
 
