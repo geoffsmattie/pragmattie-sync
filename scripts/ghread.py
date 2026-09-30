@@ -12,7 +12,8 @@ the repo's .env and never prints them.
     python scripts/ghread.py [--v1] pulls [STATE]         # pull requests
     python scripts/ghread.py [--v1] commits PR            # a PR's commits: author, committer, message
     python scripts/ghread.py [--v1] files PR [--patch]    # a PR's changed files (and their diffs)
-    python scripts/ghread.py [--v1] wait [MINUTES]        # wait for the newest run to finish (default 15)
+    python scripts/ghread.py [--v1] wait [MINUTES] [NAME] # wait for the newest run (of workflow NAME) to
+                                                          # finish (default 15); skipped runs are ignored
     python scripts/ghread.py ratelimit                   # API calls left this hour (both tokens share it)
 Without --v1 it reads pragmattie/pragmattie-sync-agentic (the rebuild).
 """
@@ -85,8 +86,12 @@ def main(argv: list[str]) -> None:
             print(r["id"], r["name"], r["event"], r["status"], r["conclusion"], r["head_branch"], r["created_at"])
     elif cmd == "wait":
         deadline = time.time() + 60 * float(rest[0] if rest else 15)
+        name = rest[1] if len(rest) > 1 else None  # e.g. CI: only that workflow's runs
         while True:
-            r = get(repo, token, "/actions/runs?per_page=1")["workflow_runs"][0]
+            runs = get(repo, token, "/actions/runs?per_page=20")["workflow_runs"]
+            # Skipped runs (a label or comment the implementer ignored) are noise, not the run.
+            runs = [x for x in runs if x["conclusion"] != "skipped" and name in (None, x["name"])]
+            r = runs[0]
             if r["status"] == "completed" or time.time() > deadline:
                 break
             time.sleep(20)

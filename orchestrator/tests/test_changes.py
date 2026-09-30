@@ -46,6 +46,15 @@ def test_migrations_folder_named_migrations_is_detected_too():
     assert not classify_files(["docs/versions/notes.md"]).touches_migration
 
 
+def test_workflows_and_policies_are_governance_files():
+    assert classify_files([".github/workflows/implement.yml"]).touches_governance
+    mixed = ["apps/api/app/main.py", "orchestrator/policies/tiers.yaml"]
+    assert classify_files(mixed).touches_governance
+    # A proposed workflow does nothing until a person applies it, and other .github files are docs.
+    assert not classify_files(["ci/proposed/ci.yml"]).touches_governance
+    assert not classify_files([".github/ISSUE_TEMPLATE/agent-task.yml"]).touches_governance
+
+
 def test_modules_touched_counts_distinct_modules_and_is_at_least_one():
     paths = [
         "apps/web/src/views/LeadsView.vue",

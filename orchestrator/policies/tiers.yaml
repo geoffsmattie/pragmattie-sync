@@ -10,11 +10,13 @@ score_bands:
   - {tier: T3, min: 80}
 
 # Floors set a minimum tier whatever the score says. When several match, the highest wins.
-# `when` keys: modules (any of), touches_migration, docs_only.
+# `when` keys: modules (any of), touches_migration, docs_only, touches_governance (the change
+# edits .github/workflows/ or orchestrator/policies/: what decides and checks everything else).
 floors:
   - {name: billing_auth, tier: T3, when: {modules: [billing_auth]}}
   - {name: schema_migration, tier: T3, when: {touches_migration: true}}
   - {name: pipeline_or_forecasting, tier: T2, when: {modules: [pipeline, forecasting]}}
+  - {name: governance_files, tier: T2, when: {touches_governance: true}}
 
 # Caps set a maximum tier, and only apply when no floor does.
 caps:

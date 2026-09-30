@@ -97,6 +97,7 @@ onBeforeUnmount(() => clearInterval(pollTimer))
             { title: 'Tier overrides', value: 'tier_override' },
             { title: 'Release gate', value: 'release_gate' },
             { title: 'Implementer (rebuild)', value: 'implementer' },
+            { title: 'Reviewer (rebuild, shadow)', value: 'reviewer' },
           ]"
           label="Agent"
           density="compact"

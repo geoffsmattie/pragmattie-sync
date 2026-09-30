@@ -40,7 +40,12 @@ class Scored:
 
 
 def facts_of(pr: PullRequest) -> Facts:
-    return Facts(module=pr.module, touches_migration=pr.touches_migration, docs_only=pr.docs_only)
+    return Facts(
+        module=pr.module,
+        touches_migration=pr.touches_migration,
+        docs_only=pr.docs_only,
+        touches_governance=pr.touches_governance,
+    )
 
 
 def score_history(db: Session, policy: Policy) -> list[Scored]:

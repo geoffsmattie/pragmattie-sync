@@ -20,6 +20,7 @@ class Facts:
     module: str | None
     touches_migration: bool
     docs_only: bool
+    touches_governance: bool = False  # CI workflows or governance policies
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ def matches(rule: Rule, facts: Facts) -> bool:
         "modules": lambda wanted: facts.module in wanted,
         "touches_migration": lambda wanted: facts.touches_migration == wanted,
         "docs_only": lambda wanted: facts.docs_only == wanted,
+        "touches_governance": lambda wanted: facts.touches_governance == wanted,
     }
     return all(checks[key](wanted) for key, wanted in rule.when.items())
 

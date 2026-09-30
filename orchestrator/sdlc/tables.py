@@ -104,6 +104,7 @@ class PullRequest(Base):
     test_files_changed: Mapped[int] = mapped_column(Integer, default=0)
     docs_only: Mapped[bool] = mapped_column(Boolean, default=False)
     modules_touched: Mapped[int] = mapped_column(Integer, default=1)
+    touches_governance: Mapped[bool] = mapped_column(Boolean, default=False)
     review_count: Mapped[int] = mapped_column(Integer, default=0)
     first_review_hours: Mapped[float | None] = mapped_column(Float)
     rework_commits: Mapped[int] = mapped_column(Integer, default=0)

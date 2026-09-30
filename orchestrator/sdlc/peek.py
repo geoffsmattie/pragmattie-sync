@@ -4,7 +4,8 @@ Only ever SELECTs. Allowlisted in .claude/settings.json so these checks need no 
 
     python -m sdlc.peek decisions [AGENT] [SOURCE] [N]   # latest audit rows (default: all, all, 20)
     python -m sdlc.peek runs                             # the rebuild implementer's runs and costs
-    python -m sdlc.peek counts                           # rows per agent and source
+    python -m sdlc.peek reviews                          # the shadow reviewer's verdicts and costs
+    python -m sdlc.peek counts                         # rows per agent and source
     python -m sdlc.peek wait AGENT SOURCE AFTER_ID [MIN] # wait for a row newer than AFTER_ID
 """
 
@@ -44,6 +45,22 @@ def runs(db) -> None:
         print(
             f"{d.created_at:%Y-%m-%d %H:%M} issue #{d.subject_id} {out.get('action')} {d.status} "
             f"{d.model_id} {out.get('turns')} turns ${cost:.2f}"
+        )
+    print(f"total ${total:.2f}")
+
+
+def reviews(db) -> None:
+    total = 0.0
+    for d in db.scalars(
+        select(AgentDecision).where(AgentDecision.agent == "reviewer").order_by(AgentDecision.id)
+    ):
+        out = d.output or {}
+        cost = float(out.get("cost_usd") or 0)
+        total += cost
+        print(
+            f"{d.created_at:%Y-%m-%d %H:%M} PR #{d.subject_id} {out.get('verdict')} "
+            f"blockers={out.get('blockers')} should_fix={out.get('should_fix')} "
+            f"criteria={out.get('criteria_met')}/{out.get('criteria')} {d.model_id} ${cost:.2f}"
         )
     print(f"total ${total:.2f}")
 
@@ -88,6 +105,8 @@ def main(argv: list[str]) -> None:
             )
         elif cmd == "runs":
             runs(db)
+        elif cmd == "reviews":
+            reviews(db)
         elif cmd == "counts":
             counts(db)
         else:

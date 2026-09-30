@@ -97,6 +97,70 @@ def test_run_records_are_not_read_in_off_mode(db):
     assert gh.requests == [] and implementer_rows(db) == []
 
 
+# --- the shadow reviewer's verdicts ------------------------------------------------------------
+
+
+def review_comment(run, *, pr=101, verdict="approve", blockers=0, by="github-actions[bot]"):
+    record = {
+        "run": str(run),
+        "pr": pr,
+        "issue": 12,
+        "sha": "3d99481aa0",
+        "model": "claude-opus-5-5",
+        "outcome": "success",
+        "verdict": verdict,
+        "blockers": blockers,
+        "should_fix": 1,
+        "criteria_met": 5,
+        "criteria": 5,
+        "turns": 12,
+        "input_tokens": 40,
+        "output_tokens": 2100,
+        "cost_usd": 0.31,
+    }
+    return {
+        "user": {"login": by},
+        "created_at": "2026-09-28T11:00:00Z",
+        "updated_at": "2026-09-28T11:30:00Z",
+        "html_url": f"https://github.com/pragmattie/pragmattie-sync-agentic/pull/{pr}#c{run}",
+        "body": "## AI review (shadow): would approve\n\n"
+        f"<!-- pragmattie-review {json.dumps(record, separators=(',', ':'))} -->",
+    }
+
+
+def test_each_reviewed_commit_becomes_one_reviewer_row(db):
+    gh = FakeGitHub()
+    gh.repo_comments = [
+        review_comment(201),
+        review_comment(202, pr=102, verdict="request_changes", blockers=2),
+        review_comment(203, verdict="none"),  # the reviewer did not finish: an error row
+        review_comment(204, by="someone"),  # not the workflow: ignored
+    ]
+    collector = AgentRunCollector(gh.client(), "shadow")
+    assert collector.poll_once(NOW)["assessed"] == 3
+    rows = list(
+        db.scalars(
+            select(AgentDecision)
+            .where(AgentDecision.agent == "reviewer")
+            .order_by(AgentDecision.head_sha)
+        )
+    )
+    assert [(r.subject_type, r.subject_id, r.head_sha, r.status) for r in rows] == [
+        ("pr", 101, "review-201", "ok"),
+        ("pr", 102, "review-202", "ok"),
+        ("pr", 101, "review-203", "error"),
+    ]
+    assert rows[0].subject_source == "agentic" and rows[0].model_id == "claude-opus-5-5"
+    assert rows[0].action_taken["verdict"] == "approve" and rows[0].output["cost_usd"] == 0.31
+    assert rows[1].action_taken["verdict"] == "request_changes" and rows[1].output["blockers"] == 2
+    assert rows[2].action_taken["verdict"] is None
+
+    # The comment is rewritten for the next commit: a new run id is a new row, the old one is not.
+    gh.repo_comments = [review_comment(201), review_comment(205)]
+    assert collector.poll_once(NOW + timedelta(minutes=1))["assessed"] == 1
+    assert implementer_rows(db) == []  # a review is never counted as an implementer run
+
+
 # --- one governance, two repositories ----------------------------------------------------------
 
 
