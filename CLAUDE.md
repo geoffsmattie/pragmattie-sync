@@ -145,7 +145,7 @@ work always gets a person. **Status: designed, not yet built — implementation 
 | --- | --- | --- | --- | --- |
 | **T0: Auto** | Risk < 20, docs/copy/config only | AI review only | Selected suites | Automatic |
 | **T1: Light** | Risk 20–49 | AI review + 1 human | Selected suites | Automatic after merge |
-| **T2: Standard** | Risk 50–79, or touches Pipeline/Forecasting | AI review + 1 senior human | Full suite | Release gate checks |
+| **T2: Standard** | Risk 50–79, or touches Pipeline/Forecasting, or edits CI workflows or governance policies | AI review + 1 senior human | Full suite | Release gate checks |
 | **T3: Critical** | Risk ≥ 80, or touches Billing/Auth, or schema migration | 2 humans incl. code owner | Full suite + manual QA | Human sign-off required |
 
 - **Overrides:** a human can raise any PR's tier at any time; lowering a tier requires a
@@ -615,5 +615,26 @@ for a person. Decided with Geoff:
   closed as not planned; 2.5 drops "timeline" too. M1 runs strictly in order (1.1, 1.2, 1.3, 1.4,
   1.6, 1.7, 1.8, 1.9, 1.10, 1.11) because each migration builds on the one before. Specs are
   written with `scripts/ghwrite.py` (issues only: body, comment, close, labels).
+  **API money stays a JSON string with 2 decimal places** (Geoff, 2026-09-30: exact, and as v1
+  does); a `PATCH` with `owner_id: null` clears the owner. Both are in 1.8's spec (#18).
+- **Towards less review (Geoff asked 2026-09-30; decided with him).** After 8 merged agent PRs
+  (none reverted, one changed by review) the record is good but thin, and v1 mis-tiered 3 of about
+  12 PRs, so nothing merges without Geoff yet. Built instead:
+  - **Auto-start:** merging an agent PR starts the next open item in the same milestone, if its
+    spec is approved (no `needs-info` label). It never crosses a milestone: that gate is Geoff's.
+    T2/T3 still stop for `/approve-plan`. (`implement.yml`, on `pull_request: closed`.)
+  - **A shadow reviewer agent** (`review.yml` in the agentic repo): on every agent PR and new
+    commit it checks the change against the issue's spec and the repo's CLAUDE.md, read-only, and
+    rewrites one comment: would approve / would request changes, findings by severity, and the
+    criteria it checked. Sonnet 5, Opus 5.5 for T3; its cost counts toward the daily cap. v1
+    records each reviewed commit (`agent = reviewer`, `subject_type = pr`,
+    `head_sha = review-<run>`; `python -m sdlc.peek reviews`). **At the M1 gate, compare its
+    verdicts with Geoff's decisions** before delegating anything.
+  - **Floor `governance_files` (T2):** a PR that edits `.github/workflows/` or
+    `orchestrator/policies/` is at least T2 (`touches_governance`, migration
+    `0009_pr_touches_governance`). `ci/proposed/` doesn't count: it does nothing until applied.
+  - **Next rung, not taken yet:** T0 auto-merge after M1, only if CI is green, the reviewer
+    agrees, M1 had no tier misses, and `risk-gate` is enforced. T1 without a person is a separate
+    decision (the blueprint gives T1 one human); T2 and T3 always keep one.
 - **TODO:** the human developers' GitHub usernames (they would replace the simulated second
   approver).
