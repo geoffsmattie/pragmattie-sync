@@ -583,7 +583,11 @@ for a person. Decided with Geoff:
   Opus after a failed Sonnet run** (Geoff, 2026-09-27). **Reminder:** issue #1 in the agentic repo,
   assigned to Geoff, to re-evaluate at the M1 gate, after 20 agent runs, or after 3 Sonnet failures
   in a row; the implementer workflow must comment there on every Sonnet run that ends with failing
-  tests. When any of those triggers is reached, remind Geoff.
+  tests. When any of those triggers is reached, remind Geoff. **Re-evaluated and kept
+  (Geoff, 2026-10-01):** issue #1 closed at the M1 gate; after 9 builds (Opus 5: 14–28 turns,
+  $0.36–0.90, no failures; Sonnet 4: 32–51 turns, $0.55–1.40, one turn-limit failure on 1.8),
+  **Sonnet stays the default and `model:opus` is added case by case** (first: 1.8's retry).
+  Reviews are a separate rule: always Opus (see the shadow reviewer below).
 - **Budget:** $100/month for the first month as a pilot (hard limit in the Anthropic Console, plus
   per-run and daily caps in code, every run an audit row), then decided from measured cost per
   issue. Estimate for the whole rebuild (~22k lines, 70-100 issues): $250-500 on Sonnet 5; about
@@ -626,7 +630,13 @@ for a person. Decided with Geoff:
   - **A shadow reviewer agent** (`review.yml` in the agentic repo): on every agent PR and new
     commit it checks the change against the issue's spec and the repo's CLAUDE.md, read-only, and
     rewrites one comment: would approve / would request changes, findings by severity, and the
-    criteria it checked. Sonnet 5, Opus 5.5 for T3; its cost counts toward the daily cap. v1
+    criteria it checked. **Opus 5.5 for every review** (2026-09-30: Sonnet 5 reviews took ~30
+    turns, one ran out of turns, and one re-review of #106 returned a placeholder "test" marked
+    approve; Opus reviewed #104 fully in 8 turns). A verdict needs a summary of 80+ characters
+    and 3+ criteria checked, else it is recorded as `invalid`. **Exclude run 36767766998
+    (`review-36767766998`, PR #106) from any comparison: it is that placeholder, recorded as an
+    approval before the guard existed.** `/review` on an agent PR asks for a fresh review. Its
+    cost counts toward the daily cap. v1
     records each reviewed commit (`agent = reviewer`, `subject_type = pr`,
     `head_sha = review-<run>`; `python -m sdlc.peek reviews`). **At the M1 gate, compare its
     verdicts with Geoff's decisions** before delegating anything.
