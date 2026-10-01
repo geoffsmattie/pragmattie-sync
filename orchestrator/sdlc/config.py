@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # off: the agents do nothing and write nothing to GitHub. shadow: they comment, label and
     # record decisions, but the risk-gate status always passes. enforce: the status gates merges.
     orchestrator_mode: Literal["off", "shadow", "enforce"] = "off"
+    # The agentic rebuild's own mode, when it should differ (enforce there, shadow for v1): empty
+    # means the same as orchestrator_mode. "off" for v1 still stops everything.
+    orchestrator_mode_agentic: Literal["", "off", "shadow", "enforce"] = ""
     poll_seconds: int = 30
     agent_timeout_seconds: float = 60.0
     risk_max_output_tokens: int = 4000

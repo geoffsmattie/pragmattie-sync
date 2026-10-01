@@ -88,6 +88,7 @@ class FakeGitHub:
         self.comments: dict[int, list[dict]] = {}
         self.labels: dict[int, set[str]] = {}
         self.statuses: list[dict] = []
+        self.reviews: dict[int, list[dict]] = {}  # PR -> GitHub reviews (user, state, commit_id)
         self.requests: list[tuple[str, str]] = []  # (method, path) of everything, reads too
         self.fail: set[str] = set()  # any request whose path contains one of these gets a 500
         self.runs: dict[str, list[dict]] = {}  # head sha -> Actions workflow runs
@@ -319,8 +320,8 @@ class FakeGitHub:
             return httpx.Response(200, json=pr)
         if m := _re.fullmatch(rf"{base}/pulls/(\d+)/files", path):
             return httpx.Response(200, json=[{"filename": f} for f in self.files[int(m[1])]])
-        if _re.fullmatch(rf"{base}/pulls/\d+/reviews", path):
-            return httpx.Response(200, json=[])
+        if m := _re.fullmatch(rf"{base}/pulls/(\d+)/reviews", path):
+            return httpx.Response(200, json=self.reviews.get(int(m[1]), []))
         if m := _re.fullmatch(rf"{base}/issues/(\d+)/comments", path):
             n = int(m[1])
             if method == "POST":

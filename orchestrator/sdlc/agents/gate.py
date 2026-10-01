@@ -10,6 +10,10 @@ What each tier needs comes from policies/tiers.yaml:
 The agent never passes a check on its own judgment above T0: for the other tiers it only relays
 the humans' sign-off once it is present.
 
+Where an AI reviewer runs (the agentic rebuild), a tier that needs no human (T0) needs the
+reviewer's "approve" on the PR's current commit instead: the blueprint's "AI review only". That
+is what lets a T0 change merge by itself.
+
 Modes: in shadow mode the check always passes and only says what enforce mode would do, so a
 stopped or misbehaving agent can't block a merge while it is being proven.
 """
@@ -26,6 +30,7 @@ class Approvals:
     signoff: bool = False  # the human sign-off box is ticked
     qa_done: bool = False  # the manual QA box is ticked
     simulated_approved: bool = False  # the simulated second approver has approved
+    ai_review: bool = False  # the AI reviewer approved this exact commit (agentic rebuild)
 
 
 @dataclass(frozen=True)
@@ -46,9 +51,13 @@ def requirements(policy: Policy, tier: str) -> dict[str, bool]:
     }
 
 
-def missing_for(policy: Policy, tier: str, approvals: Approvals) -> tuple[str, ...]:
+def missing_for(
+    policy: Policy, tier: str, approvals: Approvals, needs_ai_review: bool = False
+) -> tuple[str, ...]:
     need = requirements(policy, tier)
     missing = []
+    if needs_ai_review and not need["signoff"] and not approvals.ai_review:
+        missing.append("AI review approval")
     if need["signoff"] and not approvals.signoff:
         missing.append("human sign-off")
     if need["manual_qa"] and not approvals.qa_done:
@@ -58,13 +67,21 @@ def missing_for(policy: Policy, tier: str, approvals: Approvals) -> tuple[str, .
     return tuple(missing)
 
 
-def evaluate(policy: Policy, tier: str, *, ok: bool, approvals: Approvals, mode: str) -> Gate:
+def evaluate(
+    policy: Policy,
+    tier: str,
+    *,
+    ok: bool,
+    approvals: Approvals,
+    mode: str,
+    needs_ai_review: bool = False,
+) -> Gate:
     """The status for a PR at `tier`. `ok` is False when the risk agent failed: fail closed."""
     if not ok:
         would_be, missing = "failure", ("a successful risk assessment",)
         note = f"{tier} fallback: the risk agent failed, so this fails closed"
     else:
-        missing = missing_for(policy, tier, approvals)
+        missing = missing_for(policy, tier, approvals, needs_ai_review)
         would_be = "pending" if missing else "success"
         need = ", ".join(missing)
         note = f"{tier}: waiting for {need}" if missing else f"{tier}: requirements met"
