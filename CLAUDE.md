@@ -663,5 +663,22 @@ for a person. Decided with Geoff:
       (Geoff's ruleset bypass still works).
     - T1 without a person stays a separate decision (the blueprint gives T1 one human); T2 and T3
       always keep one.
+  - **T0 stays narrow (Geoff, 2026-10-01).** In M2 v1 rated 2.9 (branding) T1 at score 37, not
+    the forecast T0: almost every rebuild item is code, so real T0s will be rare (docs/config).
+    Geoff asked whether to make T0 easier; decided **not to move thresholds or widen "docs only"**
+    without evidence. Geoff may lower a PR himself with `/tier T0 <reason>` (floors still hold).
+  - **Next, after M2: test the reviewer before trusting it further.** Its record is ~12 valid
+    verdicts, all "approve": it approves good work, but its **catch rate** is unknown. Plan,
+    with bars **fixed now, before the run** (2026-10-01):
+    - 5 PRs with one planted defect each, against real specs: a spec rule left out, a real bug,
+      a test that can't fail, a forbidden change (e.g. a workflow or CLAUDE.md edit), and scope
+      creep. Plus 2 control PRs that are correct. None is ever approved or merged; all are closed
+      after review and labelled so they're easy to find. Roughly $2–3.
+    - **Pass:** at least **4 of 5** defects caught as a **blocker** (verdict "request changes"),
+      the forbidden change always caught, and **neither control** wrongly rejected.
+    - **If it passes,** the next rung is **T1 auto-merge with an objection window**: a T1 PR that
+      the reviewer approves (and CI passes) merges after a waiting period unless Geoff comments
+      "hold"; start with front-end-only T1 PRs. **If it fails,** fix the reviewer's prompt once for
+      the pattern, and re-test on fresh planted defects (never tune to the same set).
 - **TODO:** the human developers' GitHub usernames (they would replace the simulated second
   approver).
