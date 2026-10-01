@@ -122,12 +122,26 @@ def main(argv: list[str]) -> None:
     elif cmd == "pull":
         p = get(repo, token, f"/pulls/{rest[0]}")
         print(f"#{p['number']} [{p['state']}] merged={p['merged']} mergeable={p['mergeable']} "
-              f"state={p['mergeable_state']} merged_at={p['merged_at']} head={p['head']['ref']} {p['title']}")
+              f"state={p['mergeable_state']} merged_at={p['merged_at']} "
+              f"merged_by={(p.get('merged_by') or {}).get('login')} "
+              f"auto_merge={'on' if p.get('auto_merge') else 'off'} head={p['head']['ref']} {p['title']}")
     elif cmd == "events":
         for e in get(repo, token, f"/issues/{rest[0]}/events?per_page=100"):
             label = (e.get("label") or {}).get("name", "")
             actor = (e.get("actor") or {}).get("login")
             print(e["created_at"], e["event"], label, f"by {actor}")
+    elif cmd == "checks":  # a PR's commit statuses (risk-gate) and its reviews
+        p = get(repo, token, f"/pulls/{rest[0]}")
+        sha = p["head"]["sha"]
+        for s in get(repo, token, f"/commits/{sha}/status")["statuses"]:
+            print(f"status {s['context']}: {s['state']} - {s['description']}")
+        for r in get(repo, token, f"/pulls/{rest[0]}/reviews"):
+            mark = "this commit" if r["commit_id"] == sha else "older commit"
+            print(f"review {r['user']['login']} ({r['user']['type']}): {r['state']} on {mark}")
+    elif cmd == "settings":
+        r = get(repo, token, "")
+        keys = ("allow_auto_merge", "allow_merge_commit", "delete_branch_on_merge", "visibility")
+        print({k: r.get(k) for k in keys})
     elif cmd == "rules":
         for rule in get(repo, token, f"/rules/branches/{rest[0] if rest else 'main'}"):
             params = rule.get("parameters") or {}

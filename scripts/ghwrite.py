@@ -4,6 +4,7 @@ Uses GITHUB_TOKEN_AGENTIC from the repo's .env and never prints it. Only issues:
 branches, pull requests or settings.
 
     python scripts/ghwrite.py body N FILE          # replace issue N's body with FILE's text
+    python scripts/ghwrite.py title N TEXT...      # rename issue N
     python scripts/ghwrite.py comment N FILE       # add a comment from FILE
     python scripts/ghwrite.py close N [not_planned] # close issue N (completed by default)
     python scripts/ghwrite.py label N +NAME -NAME  # add (+) or remove (-) labels
@@ -50,6 +51,9 @@ def main(argv: list[str]) -> None:
     if cmd == "body":
         call("PATCH", f"/issues/{number}", {"body": Path(rest[0]).read_text(encoding="utf-8")})
         print(f"#{number}: body replaced")
+    elif cmd == "title":
+        call("PATCH", f"/issues/{number}", {"title": " ".join(rest)})
+        print(f"#{number}: title set")
     elif cmd == "comment":
         c = call("POST", f"/issues/{number}/comments", {"body": Path(rest[0]).read_text("utf-8")})
         print(f"#{number}: commented {c['html_url']}")
