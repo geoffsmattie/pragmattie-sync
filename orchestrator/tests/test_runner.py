@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 
 from sdlc import approver
 from sdlc.agents.llm import StructuredLLM
+from sdlc.audit import record_decision
 from sdlc.runner import MAX_ATTEMPTS, RETRY_AFTER, Runner
 from sdlc.tables import AgentDecision, PullRequest
 from sdlc.tiers import load_policy
@@ -81,6 +82,73 @@ def test_enforce_t0_needs_nobody(db):
     status = gh.last_status("sha1")
     assert status["state"] == "success" and "requirements met" in status["description"]
     assert "doesn't need to act" in gh.comment_on(7)["body"]
+
+
+def rebuild_setup(mode, **kwargs):
+    """The same runner, governing the agentic rebuild (its PRs have an AI reviewer)."""
+    runner, gh, llm = setup(mode, **kwargs)
+    return Runner(runner.gh, runner.llm, POLICY, mode, "agentic"), gh, llm
+
+
+def ai_review(db, pr, sha, verdict="approve"):
+    record_decision(
+        db,
+        agent="reviewer",
+        agent_version="v1",
+        subject_type="pr",
+        subject_source="agentic",
+        subject_id=pr,
+        trigger="workflow",
+        now=NOW,
+        head_sha=f"review-{sha}-{verdict}",
+        output={"sha": sha, "verdict": verdict},
+        action_taken={"verdict": verdict},
+        status="ok",
+    )
+    db.commit()
+
+
+def test_rebuild_t0_waits_for_the_ai_reviewer_on_this_commit_then_passes(db):
+    runner, gh, _ = rebuild_setup("enforce")  # rubric 15 -> T0
+    runner.poll_once(NOW)
+    status = gh.last_status("sha1")
+    assert status["state"] == "pending" and "AI review approval" in status["description"]
+
+    ai_review(db, 7, "sha0")  # an approval of an older commit doesn't count
+    ai_review(db, 7, "sha1", verdict="request_changes")
+    runner.poll_once(NOW + timedelta(seconds=30))
+    assert gh.last_status("sha1")["state"] == "pending"
+
+    ai_review(db, 7, "sha1")  # the newest verdict on this commit is the one that counts
+    runner.poll_once(NOW + timedelta(seconds=60))
+    status = gh.last_status("sha1")
+    assert status["state"] == "success" and "requirements met" in status["description"]
+
+
+def test_rebuild_t1_takes_a_github_approval_of_this_commit_as_the_signoff(db):
+    runner, gh, _ = rebuild_setup("enforce", adjustment=10)  # T1
+    runner.poll_once(NOW)
+    assert gh.last_status("sha1")["state"] == "pending"
+
+    gh.reviews[7] = [
+        {"user": {"login": "geoff", "type": "User"}, "state": "APPROVED", "commit_id": "sha0"},
+        {"user": {"login": "bot", "type": "Bot"}, "state": "APPROVED", "commit_id": "sha1"},
+    ]
+    runner.poll_once(NOW + timedelta(seconds=30))
+    assert gh.last_status("sha1")["state"] == "pending"  # an old commit, or a bot: not enough
+
+    gh.reviews[7].append(
+        {"user": {"login": "geoff", "type": "User"}, "state": "APPROVED", "commit_id": "sha1"}
+    )
+    runner.poll_once(NOW + timedelta(seconds=60))
+    assert gh.last_status("sha1")["state"] == "success"  # no AI review needed above T0
+
+
+def test_v1_t0_still_needs_nobody(db):
+    runner, gh, _ = setup("enforce")  # v1's own repository has no AI reviewer
+    runner.poll_once(NOW)
+    runner.poll_once(NOW + timedelta(seconds=30))
+    assert gh.last_status("sha1")["state"] == "success"
 
 
 def test_enforce_t1_waits_for_the_signoff_box_then_passes(db):

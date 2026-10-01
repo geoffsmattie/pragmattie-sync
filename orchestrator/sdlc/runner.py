@@ -88,6 +88,9 @@ class Runner:
     ):
         self.gh = gh
         self.source = source  # "github" for v1's own repository, "agentic" for the rebuild
+        # The rebuild has an AI reviewer, and its PRs are authored by a bot, so a person can
+        # approve them with a real GitHub review: both count towards its gate.
+        self.rebuild = source == "agentic"
         self.llm = llm
         self.policy = policy
         self.mode = mode
@@ -176,7 +179,14 @@ class Runner:
         tier = effective_tier(agent_tier, self._floor(pr), rulings, sha)  # a raise sticks
         approver = self._request_simulated_approval(db, pr, tier)
         approvals = Approvals()  # a new commit starts with nothing signed off
-        gate = evaluate(self.policy, tier, ok=assessment.ok, approvals=approvals, mode=self.mode)
+        gate = evaluate(
+            self.policy,
+            tier,
+            ok=assessment.ok,
+            approvals=approvals,
+            mode=self.mode,
+            needs_ai_review=self.rebuild,
+        )
         selection = suite_selector.recommend(
             db,
             pr,
@@ -312,8 +322,21 @@ class Runner:
                 )
             )
         )
-        approvals = Approvals(signoff=signoff, qa_done=qa, simulated_approved=simulated)
-        gate = evaluate(self.policy, tier, ok=ok, approvals=approvals, mode=self.mode)
+        ai_review = False
+        if self.rebuild:
+            signoff = signoff or self._approved_on_github(pr.number, sha)
+            ai_review = self._ai_approved(db, pr, sha)
+        approvals = Approvals(
+            signoff=signoff, qa_done=qa, simulated_approved=simulated, ai_review=ai_review
+        )
+        gate = evaluate(
+            self.policy,
+            tier,
+            ok=ok,
+            approvals=approvals,
+            mode=self.mode,
+            needs_ai_review=self.rebuild,
+        )
         gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
         key = (pr.number, sha)
@@ -342,6 +365,34 @@ class Runner:
             updated = self._retest(db, pr, sha, tier, ok, updated, now)
             if updated != comment["body"]:
                 self.effects.upsert_comment(pr.number, updated, comment)
+
+    def _approved_on_github(self, number: int, sha: str) -> bool:
+        """A person (not a bot) whose latest review of this exact commit is an approval."""
+        latest: dict[str, str] = {}
+        for review in self.gh.get(f"/repos/{{repo}}/pulls/{number}/reviews", per_page=100):
+            user = review.get("user") or {}
+            if review.get("commit_id") == sha and user.get("type") != "Bot":
+                latest[user.get("login", "")] = review.get("state", "")
+        return "APPROVED" in latest.values()
+
+    @staticmethod
+    def _ai_approved(db, pr: PullRequest, sha: str) -> bool:
+        """The AI reviewer's newest verdict on this exact commit is "approve"."""
+        reviews = db.scalars(
+            select(AgentDecision)
+            .where(
+                AgentDecision.agent == "reviewer",
+                AgentDecision.subject_type == "pr",
+                AgentDecision.subject_source == pr.source,
+                AgentDecision.subject_id == pr.number,
+            )
+            .order_by(AgentDecision.id.desc())
+            .limit(20)
+        )
+        for review in reviews:
+            if (review.output or {}).get("sha") == sha:
+                return (review.action_taken or {}).get("verdict") == "approve"
+        return False
 
     def _retest(self, db, pr, sha, tier, ok, body, now) -> str:
         """A new test recommendation when a person has changed the tier since the last one."""
@@ -466,7 +517,10 @@ def main(argv: list[str] | None = None) -> None:
             "polling every %ss%s",
             runner_mode,
             settings.poll_seconds,
-            f", also governing {settings.github_repo_agentic}" if rebuild else "",
+            f", also governing {settings.github_repo_agentic} in "
+            f"{settings.orchestrator_mode_agentic or runner_mode} mode"
+            if rebuild
+            else "",
         )
         while True:
             agents = (
@@ -493,6 +547,9 @@ def _rebuild_agents(settings, policy: Policy, mode: str) -> list[tuple[str, obje
     if not settings.github_token_agentic:
         return []
     from sdlc.agent_runs import AgentRunCollector
+
+    if mode != "off" and settings.orchestrator_mode_agentic:
+        mode = settings.orchestrator_mode_agentic  # e.g. enforce for the rebuild, shadow for v1
 
     gh = GitHubClient(token=settings.github_token_agentic, repo=settings.github_repo_agentic)
     source = "agentic"

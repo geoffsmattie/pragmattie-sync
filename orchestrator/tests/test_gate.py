@@ -33,6 +33,20 @@ def test_t0_passes_with_nobody():
     assert (result.state, result.missing) == ("success", ())
 
 
+def test_with_an_ai_reviewer_t0_needs_its_approval_and_nothing_else():
+    def rebuild(tier, approvals):
+        return evaluate(
+            POLICY, tier, ok=True, approvals=approvals, mode="enforce", needs_ai_review=True
+        )
+
+    waiting = rebuild("T0", NOBODY)
+    assert (waiting.state, waiting.missing) == ("pending", ("AI review approval",))
+    assert rebuild("T0", Approvals(ai_review=True)).state == "success"
+    # Above T0 a person decides, so the AI review is not an extra requirement there.
+    assert rebuild("T1", SIGNED).state == "success"
+    assert rebuild("T1", Approvals(ai_review=True)).missing == ("human sign-off",)
+
+
 @pytest.mark.parametrize("tier", ["T1", "T2"])
 def test_t1_and_t2_wait_for_the_human_signoff_then_pass(tier):
     waiting = gate(tier)

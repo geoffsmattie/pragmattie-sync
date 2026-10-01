@@ -647,8 +647,21 @@ for a person. Decided with Geoff:
   - **Floor `governance_files` (T2):** a PR that edits `.github/workflows/` or
     `orchestrator/policies/` is at least T2 (`touches_governance`, migration
     `0009_pr_touches_governance`). `ci/proposed/` doesn't count: it does nothing until applied.
-  - **Next rung, not taken yet:** T0 auto-merge after M1, only if CI is green, the reviewer
-    agrees, M1 had no tier misses, and `risk-gate` is enforced. T1 without a person is a separate
-    decision (the blueprint gives T1 one human); T2 and T3 always keep one.
+  - **T0 auto-merge: taken at the M1 gate (Geoff, 2026-10-01).** Gate read: CI green on every
+    PR; the reviewer approved all PRs Geoff merged except #118 (it objected to the empty
+    description of a PR Geoff opened himself) and was once too lenient (#116, an unmet rule filed
+    as a note); one borderline tier call (#105) and none near T0. Built:
+    - **`risk-gate` decides the rebuild's merges** (`ORCHESTRATOR_MODE_AGENTIC=enforce`; v1's own
+      repository stays in `ORCHESTRATOR_MODE`). In the rebuild, T0 passes only when the AI
+      reviewer's newest verdict on that exact commit is "approve" (`gate.py`'s
+      `needs_ai_review`); T1+ pass on a person's sign-off, and **a person's GitHub approval of
+      the PR's current commit counts as that sign-off** (the rebuild's PRs are authored by a bot,
+      so Geoff can approve them). T3 still needs manual QA and the simulated second approval.
+    - **Every agent PR is set to auto-merge** (`implement.yml`), so GitHub merges it once CI and
+      `risk-gate` pass: T0 with no person, T1+ as soon as the approval lands.
+    - **Fails closed:** with v1's stack down, `risk-gate` never reports and nothing merges
+      (Geoff's ruleset bypass still works).
+    - T1 without a person stays a separate decision (the blueprint gives T1 one human); T2 and T3
+      always keep one.
 - **TODO:** the human developers' GitHub usernames (they would replace the simulated second
   approver).

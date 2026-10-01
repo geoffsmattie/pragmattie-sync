@@ -88,9 +88,12 @@ def main(argv: list[str]) -> None:
         deadline = time.time() + 60 * float(rest[0] if rest else 15)
         name = rest[1] if len(rest) > 1 else None  # e.g. CI: only that workflow's runs
         while True:
-            runs = get(repo, token, "/actions/runs?per_page=20")["workflow_runs"]
+            runs = get(repo, token, "/actions/runs?per_page=100")["workflow_runs"]
             # Skipped runs (a label or comment the implementer ignored) are noise, not the run.
             runs = [x for x in runs if x["conclusion"] != "skipped" and name in (None, x["name"])]
+            if not runs:  # a burst of skipped runs can hide everything else for a moment
+                time.sleep(20)
+                continue
             r = runs[0]
             if r["status"] == "completed" or time.time() > deadline:
                 break
