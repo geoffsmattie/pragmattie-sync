@@ -577,7 +577,8 @@ for a person. Decided with Geoff:
   redesign by decision.
 - **A GitHub App** gives the agents their own identity (Geoff gave permission), so their PRs aren't
   authored by Geoff and he can approve them with real GitHub reviews.
-- **Models:** Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the rebuild's
+- **Models (superseded 2026-10-01: Opus 5.5 is now the default for every build, see below):**
+  Sonnet 5 by default; Opus 5.5 for T3, chosen by rule in the rebuild's
   `.github/workflows/implement.yml` (moves to its `tiers.yaml` at M4): a `model:opus`/`model:sonnet` label on the issue wins, then the PR's actual tier, then
   the issue's `forecast:Tn` label. Every run's model is in the audit trail. **No automatic step-up to
   Opus after a failed Sonnet run** (Geoff, 2026-09-27). **Reminder:** issue #1 in the agentic repo,
@@ -587,7 +588,10 @@ for a person. Decided with Geoff:
   (Geoff, 2026-10-01):** issue #1 closed at the M1 gate; after 9 builds (Opus 5: 14–28 turns,
   $0.36–0.90, no failures; Sonnet 4: 32–51 turns, $0.55–1.40, one turn-limit failure on 1.8),
   **Sonnet stays the default and `model:opus` is added case by case** (first: 1.8's retry).
-  Reviews are a separate rule: always Opus (see the shadow reviewer below).
+  **Changed the same day (Geoff, 2026-10-01): Opus 5.5 is the default for every build**, after
+  Sonnet hit its turn limit on 1.9 too (54 turns, $1.34; two failures in a row) while Opus
+  finished 1.8 in 19 turns for $0.68. A `model:sonnet` label on an issue still chooses Sonnet.
+  Reviews were already always Opus (see the shadow reviewer below).
 - **Budget:** $100/month for the first month as a pilot (hard limit in the Anthropic Console, plus
   per-run and daily caps in code, every run an audit row), then decided from measured cost per
   issue. Estimate for the whole rebuild (~22k lines, 70-100 issues): $250-500 on Sonnet 5; about
