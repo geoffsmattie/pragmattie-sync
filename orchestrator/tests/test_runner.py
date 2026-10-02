@@ -387,3 +387,26 @@ def test_a_trial_run_never_stands_in_for_the_real_assessment(db, capsys):
     assert summary["assessed"] == 1 and len(llm.calls) == 2
     assert [d.trigger for d in decisions(db)] == ["trial", "poll"]
     assert gh.labels[7] == {"tier:T0"}
+
+
+def test_github_usage_skips_a_paused_client_and_reports_hourly(caplog):
+    from datetime import timedelta as td
+
+    from sdlc.runner import GitHubUsage
+
+    class Client:
+        repo = "acme/x"
+        limited_until = None
+        sent = 12
+        not_modified = 9
+
+    gh = Client()
+    usage = GitHubUsage([gh], every=td(hours=1))
+    assert not usage.paused(gh) and not usage.paused(None)
+    gh.limited_until = datetime(2100, 1, 1)
+    with caplog.at_level("INFO"):
+        assert usage.paused(gh) and usage.paused(gh)
+        usage.report(datetime.now() + td(hours=2))
+    assert caplog.text.count("paused until") == 1  # announced once per pause
+    assert "12 sent, 9 unchanged" in caplog.text
+    assert (gh.sent, gh.not_modified) == (0, 0)
