@@ -27,7 +27,7 @@ import argparse
 import logging
 import time
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -588,6 +588,7 @@ def main(argv: list[str] | None = None) -> None:
             if rebuild
             else "",
         )
+        usage = GitHubUsage([gh, *{id(a.gh): a.gh for _, a in rebuild}.values()])
         while True:
             agents = (
                 ("pr_risk", runner),
@@ -597,7 +598,10 @@ def main(argv: list[str] | None = None) -> None:
                 ("release_gate", release),
                 *rebuild,
             )
+            usage.report()
             for name, agent in agents:
+                if usage.paused(getattr(agent, "gh", None)):
+                    continue  # its token's allowance is spent: GitHub would refuse every call
                 try:
                     summary = agent.poll_once()
                     if summary.get("assessed") or summary.get("errors"):
@@ -605,6 +609,41 @@ def main(argv: list[str] | None = None) -> None:
                 except Exception:  # noqa: BLE001 - one bad poll must not stop the loop or the other agent
                     log.exception("%s poll failed", name)
             time.sleep(settings.poll_seconds)
+
+
+class GitHubUsage:
+    """Skips agents while their token is rate-limited, and logs each client's GitHub calls
+    once an hour (how many were sent, and how many came back 304 and cost nothing)."""
+
+    def __init__(self, clients: list[GitHubClient], every: timedelta = timedelta(hours=1)):
+        self.clients = clients
+        self.every = every
+        self._since = datetime.now()
+        self._announced: dict[int, datetime] = {}
+
+    def paused(self, gh: GitHubClient | None) -> bool:
+        until = getattr(gh, "limited_until", None)
+        if not until or datetime.now(UTC).replace(tzinfo=None) >= until:
+            return False
+        if self._announced.get(id(gh)) != until:
+            self._announced[id(gh)] = until
+            log.warning("GitHub rate limit spent for %s: paused until %s UTC", gh.repo, until)
+        return True
+
+    def report(self, now: datetime | None = None) -> None:
+        now = now or datetime.now()
+        if now - self._since < self.every:
+            return
+        for gh in self.clients:
+            log.info(
+                "GitHub calls for %s in the last %s: %s sent, %s unchanged (free)",
+                gh.repo,
+                self.every,
+                gh.sent,
+                gh.not_modified,
+            )
+            gh.sent = gh.not_modified = 0
+        self._since = now
 
 
 def _rebuild_agents(settings, policy: Policy, mode: str) -> list[tuple[str, object]]:

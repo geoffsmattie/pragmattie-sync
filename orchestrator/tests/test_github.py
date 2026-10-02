@@ -4,7 +4,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from sdlc.github_client import GitHubClient, GitHubError, parse_time
+from sdlc.github_client import GitHubClient, GitHubError, RateLimited, parse_time
 from sdlc.signals.github import Collector, infer_module, labels_of
 from sdlc.tables import CIRun, Engineer, Issue, PullRequest
 
@@ -187,3 +187,67 @@ def test_paginate_follows_next_links():
         "label-2",
         "label-3",
     ]
+
+
+def counting_client(handler):
+    sent = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return handler(request)
+
+    gh = GitHubClient(
+        token="t",
+        repo=REPO,
+        base_url="https://api.github.test",
+        transport=httpx.MockTransport(record),
+    )
+    return gh, sent
+
+
+def test_an_unchanged_resource_is_read_conditionally_and_comes_from_the_cache():
+    def etagged(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("If-None-Match") == '"v1"':
+            return httpx.Response(304)
+        return httpx.Response(200, json=[{"number": 7}], headers={"ETag": '"v1"'})
+
+    gh, sent = counting_client(etagged)
+    assert gh.get("/repos/{repo}/pulls", state="open") == [{"number": 7}]
+    assert gh.get("/repos/{repo}/pulls", state="open") == [{"number": 7}]  # 304: the cached body
+    assert list(gh.paginate("/repos/{repo}/pulls")) == [{"number": 7}]
+    assert "If-None-Match" not in sent[0].headers
+    assert sent[1].headers["If-None-Match"] == '"v1"'
+    assert (gh.sent, gh.not_modified) == (3, 1)  # other parameters are a different resource
+    assert gh.get_text("/repos/{repo}/pulls", "application/vnd.github.diff")  # keyed by Accept too
+    assert "If-None-Match" not in sent[-1].headers
+
+
+def test_a_spent_rate_limit_pauses_the_client_until_github_resets_it():
+    reset = 4102444800  # 2100-01-01 00:00 UTC
+
+    def spent(request: httpx.Request) -> httpx.Response:
+        headers = {"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(reset)}
+        return httpx.Response(403, json={"message": "API rate limit exceeded"}, headers=headers)
+
+    gh, sent = counting_client(spent)
+    with pytest.raises(RateLimited) as err:
+        gh.get("/repos/{repo}/pulls")
+    assert err.value.until.isoformat() == "2100-01-01T00:00:00"
+    with pytest.raises(RateLimited, match="paused until 00:00 UTC"):
+        gh.post("/repos/{repo}/issues", {"title": "x"})
+    assert len(sent) == 1  # the second call never reached GitHub
+
+
+def test_a_secondary_limit_pauses_for_its_retry_after_and_other_errors_dont_pause():
+    def secondary(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/missing"):
+            return httpx.Response(403, json={"message": "Resource not accessible"})
+        return httpx.Response(429, json={"message": "slow down"}, headers={"retry-after": "60"})
+
+    gh, _ = counting_client(secondary)
+    with pytest.raises(GitHubError) as err:
+        gh.get("/repos/{repo}/missing")
+    assert not isinstance(err.value, RateLimited) and gh.limited_until is None
+    with pytest.raises(RateLimited):
+        gh.get("/repos/{repo}/pulls")
+    assert gh.limited_until is not None
