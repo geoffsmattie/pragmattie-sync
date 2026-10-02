@@ -44,6 +44,17 @@ class ReleaseRules:
 
 
 @dataclass(frozen=True)
+class ObjectionWindow:
+    """Where an AI reviewer runs (the agentic rebuild): a PR at one of `tiers`, changing only
+    files under `paths`, that the reviewer approved, counts as signed off once that approval is
+    `minutes` old, unless a person has commented /hold on it."""
+
+    tiers: tuple[str, ...]
+    minutes: int
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Rule:
     """A floor or a cap: `tier` applies when every condition in `when` holds."""
 
@@ -60,6 +71,24 @@ class Policy:
     fallback_tier: str
     tiers: dict[str, Tier]
     release: ReleaseRules
+    objection_window: ObjectionWindow | None = None  # none: every sign-off is a person's
+
+
+def _objection_window(raw) -> ObjectionWindow | None:
+    if not raw:
+        return None
+    where = "objection_window"
+    tiers = tuple(_tier_id(t, where) for t in raw.get("tiers") or [])
+    paths = tuple(str(p) for p in raw.get("paths") or [])
+    try:
+        minutes = int(raw["minutes"])
+    except (KeyError, TypeError, ValueError) as err:
+        raise PolicyError(f"{where}: minutes must be a whole number ({err})") from err
+    if not tiers or not paths or minutes < 1:
+        raise PolicyError(f"{where}: needs tiers, paths and at least 1 minute")
+    if any(t in ("T2", "T3") for t in tiers):
+        raise PolicyError(f"{where}: T2 and T3 always need a person, so they can't be listed")
+    return ObjectionWindow(tiers, minutes, paths)
 
 
 def _tier_id(value, where: str) -> str:
@@ -141,4 +170,5 @@ def load_policy(path: Path = POLICY) -> Policy:
         fallback_tier=_tier_id(raw["fallback_tier"], "fallback_tier"),
         tiers=tiers,
         release=release,
+        objection_window=_objection_window(raw.get("objection_window")),
     )

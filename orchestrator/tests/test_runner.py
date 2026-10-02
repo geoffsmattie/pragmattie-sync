@@ -144,6 +144,68 @@ def test_rebuild_t1_takes_a_github_approval_of_this_commit_as_the_signoff(db):
     assert gh.last_status("sha1")["state"] == "success"  # no AI review needed above T0
 
 
+WEB_ONLY = ["apps/crm-web/src/views/AboutView.vue", "apps/crm-web/src/tests/About.spec.js"]
+API_TOO = ["apps/crm-web/src/views/AboutView.vue", "apps/api/app/routers/leads.py"]
+
+
+def window_rows(db):
+    return list(db.scalars(select(AgentDecision).where(AgentDecision.agent == "objection_window")))
+
+
+def test_rebuild_web_only_t1_merges_an_hour_after_the_ai_approval_with_no_hold(db):
+    runner, gh, _ = rebuild_setup("enforce", files=WEB_ONLY, adjustment=10)  # T1
+    runner.poll_once(NOW)
+    ai_review(db, 7, "sha1")  # approved at NOW
+
+    runner.poll_once(NOW + timedelta(minutes=30))
+    status = gh.last_status("sha1")
+    assert status["state"] == "pending" and "merges after 11:00 UTC" in status["description"]
+    assert window_rows(db) == []
+
+    runner.poll_once(NOW + timedelta(minutes=61))
+    assert gh.last_status("sha1")["state"] == "success"
+    (row,) = window_rows(db)  # the sign-off is recorded as the window's, not a person's
+    assert (row.subject_id, row.tier, row.output["commit"]) == (7, "T1", "sha1")
+
+    runner.poll_once(NOW + timedelta(minutes=62))
+    assert len(window_rows(db)) == 1  # once per commit
+
+
+def test_a_hold_from_a_person_stops_the_window(db):
+    runner, gh, _ = rebuild_setup("enforce", files=WEB_ONLY, adjustment=10)
+    runner.poll_once(NOW)
+    ai_review(db, 7, "sha1")
+    gh.human_comment(7, "/hold I want to look at the new About page")
+
+    runner.poll_once(NOW + timedelta(minutes=90))
+    status = gh.last_status("sha1")
+    assert status["state"] == "pending" and "merges after" not in status["description"]
+    assert window_rows(db) == []
+
+    gh.reviews[7] = [
+        {"user": {"login": "geoff", "type": "User"}, "state": "APPROVED", "commit_id": "sha1"}
+    ]
+    runner.poll_once(NOW + timedelta(minutes=91))
+    assert gh.last_status("sha1")["state"] == "success"  # a person's approval still works
+
+
+def test_the_window_needs_web_only_paths_t1_and_the_ai_approval(db):
+    # API code too: a person signs off.
+    runner, gh, _ = rebuild_setup("enforce", files=API_TOO, adjustment=10)
+    runner.poll_once(NOW)
+    ai_review(db, 7, "sha1")
+    runner.poll_once(NOW + timedelta(hours=3))
+    assert gh.last_status("sha1")["state"] == "pending" and window_rows(db) == []
+
+
+def test_the_window_never_applies_without_the_ai_approval(db):
+    runner, gh, _ = rebuild_setup("enforce", files=WEB_ONLY, adjustment=10)
+    runner.poll_once(NOW)
+    ai_review(db, 7, "sha1", verdict="request_changes")
+    runner.poll_once(NOW + timedelta(hours=3))
+    assert gh.last_status("sha1")["state"] == "pending" and window_rows(db) == []
+
+
 def test_v1_t0_still_needs_nobody(db):
     runner, gh, _ = setup("enforce")  # v1's own repository has no AI reviewer
     runner.poll_once(NOW)

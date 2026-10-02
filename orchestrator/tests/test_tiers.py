@@ -4,6 +4,21 @@ import yaml
 from sdlc.tiers import POLICY, PolicyError, load_policy
 
 
+def test_the_objection_window_is_t1_web_only_for_an_hour():
+    window = load_policy().objection_window
+    assert window.tiers == ("T1",) and window.minutes == 60
+    assert window.paths == ("apps/crm-web/", "apps/insights-web/")
+
+
+def test_the_objection_window_can_never_cover_t2_or_t3(tmp_path):
+    raw = yaml.safe_load(POLICY.read_text(encoding="utf-8"))
+    raw["objection_window"]["tiers"] = ["T1", "T2"]
+    path = tmp_path / "tiers.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(PolicyError, match="T2 and T3"):
+        load_policy(path)
+
+
 def test_policy_matches_the_blueprint_and_claude_md():
     policy = load_policy()
     assert policy.bands == ((0, "T0"), (20, "T1"), (50, "T2"), (80, "T3"))

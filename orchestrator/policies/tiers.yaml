@@ -22,6 +22,16 @@ floors:
 caps:
   - {name: docs_or_config_only, tier: T0, when: {docs_only: true}}
 
+# The agentic rebuild only, where an AI reviewer reads every PR: a PR at one of these tiers that
+# changes only files under these paths, and that the AI reviewer approved, counts as signed off
+# once that approval is `minutes` old, unless a person comments /hold on it. A person's approval
+# still merges it at once. T2 and T3 can never be listed. Decided by Geoff on 2026-10-02, after
+# the reviewer passed its test (PRs #135-#141: 5/5 planted defects caught, both controls approved).
+objection_window:
+  tiers: [T1]
+  minutes: 60
+  paths: [apps/crm-web/, apps/insights-web/]
+
 # If the agent errors, times out or returns malformed output, a PR falls back to its floor
 # tier, or to this one when no floor applies. The check fails closed; it never fails open.
 fallback_tier: T2
