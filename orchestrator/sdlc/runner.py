@@ -26,6 +26,7 @@ A failed run is retried up to three times, five minutes apart, and fails closed 
 import argparse
 import logging
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -33,7 +34,7 @@ from sqlalchemy.exc import IntegrityError
 
 from sdlc import gate_status, suite_selector
 from sdlc.agents.comment import MARKER, Meta, comment_head, read_ticks, refresh, render, retier
-from sdlc.agents.gate import Approvals, evaluate
+from sdlc.agents.gate import DESCRIPTION_LIMIT, Approvals, evaluate
 from sdlc.agents.github_effects import Effects
 from sdlc.agents.llm import StructuredLLM
 from sdlc.agents.overrides import AGENT as OVERRIDE_AGENT
@@ -72,6 +73,7 @@ log = logging.getLogger("sdlc.runner")
 
 MAX_ATTEMPTS = 3
 RETRY_AFTER = timedelta(minutes=5)
+WINDOW_AGENT = "objection_window"  # audit rows for a sign-off given by the window, not a person
 SETTLE_EVERY = timedelta(minutes=2)  # how often to look for finished CI on recommended commits
 # Rough Sonnet 5 rates in dollars per million tokens, only for the dry-run estimate.
 INPUT_RATE, OUTPUT_RATE = 2.0, 10.0
@@ -148,7 +150,7 @@ class Runner:
             elif decisions:
                 decision = good or decisions[-1]
                 self._rule_on_commands(db, pr, sha, decision.tier, comments, now)
-                self._refresh_gate(db, pr, sha, decision, comment, now)
+                self._refresh_gate(db, pr, sha, decision, comment, now, comments)
             db.commit()
 
     def _may_try(self, decisions: list, now: datetime) -> bool:
@@ -310,7 +312,7 @@ class Runner:
 
     # --- keep the check in step with what people do ------------------------------------------
 
-    def _refresh_gate(self, db, pr, sha, decision, comment, now) -> None:
+    def _refresh_gate(self, db, pr, sha, decision, comment, now, comments=()) -> None:
         ok = decision.status == "ok"
         rulings = self._rulings(db, pr)
         tier = effective_tier(decision.tier, self._floor(pr), rulings, sha)
@@ -322,10 +324,17 @@ class Runner:
                 )
             )
         )
-        ai_review = False
+        ai_review, merges_at = False, None
         if self.rebuild:
             signoff = signoff or self._approved_on_github(pr.number, sha)
-            ai_review = self._ai_approved(db, pr, sha)
+            approval = self._ai_approval(db, pr, sha)
+            ai_review = approval is not None
+            if ok and not signoff and approval is not None:
+                merges_at = self._objection_window(db, pr, sha, tier, approval, comments)
+                if merges_at is not None and now >= merges_at:
+                    signoff = True  # nobody objected within the window: the reviewer's approval
+                    self._record_window_signoff(db, pr, sha, tier, approval, now)
+                    merges_at = None
         approvals = Approvals(
             signoff=signoff, qa_done=qa, simulated_approved=simulated, ai_review=ai_review
         )
@@ -337,6 +346,9 @@ class Runner:
             mode=self.mode,
             needs_ai_review=self.rebuild,
         )
+        if merges_at is not None and gate.would_be == "pending":
+            note = f" or, unless someone comments /hold, merges after {merges_at:%H:%M} UTC"
+            gate = replace(gate, description=(gate.description + note)[:DESCRIPTION_LIMIT])
         gate_status.upsert(db, pr, gate, tier=tier, mode=self.mode, now=now)
 
         key = (pr.number, sha)
@@ -375,9 +387,62 @@ class Runner:
                 latest[user.get("login", "")] = review.get("state", "")
         return "APPROVED" in latest.values()
 
+    def _objection_window(self, db, pr, sha, tier, approval, comments) -> datetime | None:
+        """When the reviewer's approval would count as the sign-off, if this PR qualifies for the
+        objection window (tiers.yaml): the right tier, only the listed paths, and no /hold from a
+        person. None when it doesn't qualify."""
+        window = self.policy.objection_window
+        if window is None or tier not in window.tiers:
+            return None
+        latest = suite_selector.latest_recommendation(db, pr, sha)
+        paths = (latest.output or {}).get("paths") if latest else None
+        if not paths or not all(p.startswith(window.paths) for p in paths):
+            return None
+        for c in comments:
+            person = (c.get("user") or {}).get("type") != "Bot"
+            if person and (c.get("body") or "").strip().lower().startswith("/hold"):
+                return None
+        return approval.created_at + timedelta(minutes=window.minutes)
+
+    def _record_window_signoff(self, db, pr, sha, tier, approval, now) -> None:
+        """One audit row per commit signed off by the objection window rather than a person."""
+        head = f"window-{sha}"[:40]
+        exists = db.scalar(
+            select(AgentDecision.id).where(
+                AgentDecision.agent == WINDOW_AGENT,
+                AgentDecision.subject_source == pr.source,
+                AgentDecision.subject_id == pr.number,
+                AgentDecision.head_sha == head,
+            )
+        )
+        if exists:
+            return
+        window = self.policy.objection_window
+        record_decision(
+            db,
+            agent=WINDOW_AGENT,
+            agent_version="v1",
+            subject_type="pr",
+            subject_source=pr.source,
+            subject_id=pr.number,
+            trigger="schedule",
+            now=now,
+            head_sha=head,
+            tier=tier,
+            output={
+                "commit": sha,
+                "reviewer_approval": approval.head_sha,
+                "approved_at": approval.created_at.isoformat(),
+                "window_minutes": window.minutes,
+                "paths": list(window.paths),
+            },
+            action_taken={"signoff": "objection window passed with no /hold"},
+            status="ok",
+        )
+
     @staticmethod
-    def _ai_approved(db, pr: PullRequest, sha: str) -> bool:
-        """The AI reviewer's newest verdict on this exact commit is "approve"."""
+    def _ai_approval(db, pr: PullRequest, sha: str) -> AgentDecision | None:
+        """The AI reviewer's newest verdict on this exact commit, when it is "approve"."""
         reviews = db.scalars(
             select(AgentDecision)
             .where(
@@ -391,8 +456,9 @@ class Runner:
         )
         for review in reviews:
             if (review.output or {}).get("sha") == sha:
-                return (review.action_taken or {}).get("verdict") == "approve"
-        return False
+                approved = (review.action_taken or {}).get("verdict") == "approve"
+                return review if approved else None
+        return None
 
     def _retest(self, db, pr, sha, tier, ok, body, now) -> str:
         """A new test recommendation when a person has changed the tier since the last one."""
