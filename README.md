@@ -107,3 +107,8 @@ npm test
 | 4 | First agents: triage + PR risk, governance tiers | |
 | 5 | Forecasting: delivery forecasts, planner agent | |
 | 6 | Polish: test selector, release gate, audit log, client demo | |
+
+## Licence
+
+Copyright (c) 2026 PragMattie Growth Partners, LLC. All rights reserved. The code is public to
+read; no licence to use, copy, modify or distribute it is granted.
