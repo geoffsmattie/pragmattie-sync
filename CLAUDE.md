@@ -695,6 +695,20 @@ for a person. Decided with Geoff:
       tier, the reviewer approval it rests on), so the trail always shows no person approved.
       API, orchestrator and mixed PRs keep a person's sign-off. Next possible rungs (not taken):
       widen the paths, or T1 everywhere, after a record of window merges with no reverts.
+    - **The bar for T1 everywhere (Geoff, 2026-10-05, fixed before counting):** the objection
+      window (60 minutes, `/hold` still stops it) widens from front-end-only to **every T1 PR**
+      once **10 T1 PRs in a row** merge clean, with **no reverts** among them. Counted from
+      2026-10-05, after #162 (4.3); reported at each merge.
+      - **Counts:** a T1 agent PR (its final tier) where the AI reviewer's first verdict was
+        "approve" and it merged with no `/revise`, no human commit and no later fix for something
+        the review missed. Front-end PRs merged by the window count too.
+      - **Resets to 0:** a T1 PR the reviewer approved that then needed a change (like #160's
+        module rate, caught by a person), or any revert of a counted PR.
+      - **Neutral:** the reviewer says "request changes" and is right (it worked), or is stricter
+        than needed and is overruled (safe).
+      - Why now and not sooner: of M4's first three T1 PRs, #158 and #160 needed changes, and
+        the reviewer approved #160 before a person caught its gap. T2 and T3 always keep a
+        person; `tiers.yaml` refuses to list them.
     - **If it passes,** the next rung is **T1 auto-merge with an objection window**: a T1 PR that
       the reviewer approves (and CI passes) merges after a waiting period unless Geoff comments
       "hold"; start with front-end-only T1 PRs. **If it fails,** fix the reviewer's prompt once for
