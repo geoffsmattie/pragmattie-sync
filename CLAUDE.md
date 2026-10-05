@@ -699,5 +699,26 @@ for a person. Decided with Geoff:
       the reviewer approves (and CI passes) merges after a waiting period unless Geoff comments
       "hold"; start with front-end-only T1 PRs. **If it fails,** fix the reviewer's prompt once for
       the pattern, and re-test on fresh planted defects (never tune to the same set).
+- **The demo story (Geoff, 2026-10-04):** "I built the governance layer first; then AI agents
+  built the entire product under it, including the next version of the governance layer, which now
+  runs the show." The audience never hears of a pivot from simulated developers to agents. So:
+  1. **The real agent build is the headline** in v2's Delivery Insights: the agentic repo's issues,
+     PRs, tiers, reviews, CI and cost. Simulated history stays (risk calibration needs incidents),
+     but it is labelled as calibration data used to test the models and never presented as a team.
+  2. **Forecast the real build:** the milestones (GitHub milestones M0–M7) are the epics, and the
+     forecast predicts when each finishes at the agents' pace.
+  3. **The whole trail lives in v2:** #157 (7.4) imports v1's decisions about the rebuild into
+     v2's audit trail before cutover, marked as decided by v1; v1's database dump is kept too.
+  4. **The sprint board is on GitHub now:** a Projects board in the `pragmattie` organization with
+     every agentic issue, closed ones included, grouped by milestone, using GitHub's built-in
+     workflows until 4.15–4.16 take over.
+  5. **The M6 demo script follows this story:** the board, one PR's risk comment and gate, the
+     decision log, the live forecast, then a live issue triaged, built, tiered and gated.
+  Specs from M4 batch 2 onwards (and M5, M6) are written to fit.
+- **M4 decisions (Geoff, 2026-10-04):** v1's rebuild-era features are folded into M4 (the
+  governance floor in 4.1, run records in 4.4, the reviewer gate, GitHub approval as sign-off and
+  the objection window in 4.7, conditional reads in 4.9). The board goes live at 4.16: v2's board
+  updater runs against the agentic repo from then; the rest of v2 stays offline until 7.1. Specs
+  come in three batches: 4.1–4.7 (approved 2026-10-04), 4.8–4.14, 4.15–4.21.
 - **TODO:** the human developers' GitHub usernames (they would replace the simulated second
   approver).
