@@ -109,7 +109,9 @@ class Runner:
             return {"mode": "off"}
         now = now or datetime.now().replace(microsecond=0)
         summary = {"mode": self.mode, "prs": 0, "assessed": 0, "failed": 0, "errors": 0}
+        listed = set()
         for item in self.gh.get("/repos/{repo}/pulls", state="open", per_page=100):
+            listed.add(item["number"])
             if item.get("draft"):
                 continue  # scored once it is marked ready for review
             summary["prs"] += 1
@@ -118,6 +120,7 @@ class Runner:
             except (GitHubError, IntegrityError) as err:
                 summary["errors"] += 1
                 log.warning("PR #%s: %s", item["number"], err)
+        summary["closed"] = self._collect_closed(listed, summary)
         if self._last_settle is None or now - self._last_settle >= SETTLE_EVERY:
             self._last_settle = now
             try:
@@ -128,6 +131,31 @@ class Runner:
                 summary["errors"] += 1
                 log.warning("test selector: %s", err)
         return summary
+
+    def _collect_closed(self, listed: set[int], summary: dict) -> int:
+        """Collect once more each PR stored as open that has left GitHub's open list, so its
+        merge or close is recorded. Without this a merged PR stays "open" here for good (its
+        simulated approval request then looks pending, and its card never reaches Merged)."""
+        count = 0
+        with SessionLocal() as db:
+            stale = db.scalars(
+                select(PullRequest.number).where(
+                    PullRequest.source == self.source,
+                    PullRequest.state == "open",
+                    PullRequest.number.is_not(None),
+                )
+            ).all()
+            for number in sorted(set(stale) - listed):
+                try:
+                    detail = self.gh.get(f"/repos/{{repo}}/pulls/{number}")
+                    Collector(db, self.gh, self.source).collect_pull_request(detail)
+                    db.commit()
+                    count += 1
+                except (GitHubError, IntegrityError) as err:
+                    db.rollback()
+                    summary["errors"] += 1
+                    log.warning("PR #%s (left the open list): %s", number, err)
+        return count
 
     def _handle(self, item: dict, now: datetime, summary: dict) -> None:
         number, sha = item["number"], item["head"]["sha"]

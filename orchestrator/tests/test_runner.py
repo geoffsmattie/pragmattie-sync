@@ -308,6 +308,22 @@ def test_one_prs_github_error_does_not_stop_the_others(db):
     assert gh.comment_on(8) is not None and gh.comment_on(7) is None
 
 
+def test_a_pr_that_leaves_the_open_list_is_collected_once_more_as_merged(db):
+    runner, gh, _ = setup("shadow", files=MIGRATION)  # T3: the simulated approval is requested
+    runner.poll_once(NOW)
+    assert [a.pull_request.number for a in approver.pending(db)] == [7]
+
+    gh.merge(7, "merge7")
+    summary = runner.poll_once(NOW + timedelta(minutes=1))
+    db.expire_all()
+    pr = db.scalar(select(PullRequest).where(PullRequest.number == 7))
+    assert summary["closed"] == 1
+    assert (pr.state, pr.merge_commit_sha) == ("merged", "merge7")
+    assert approver.pending(db) == []  # a merged PR's request no longer waits on anyone
+
+    assert runner.poll_once(NOW + timedelta(minutes=2))["closed"] == 0  # once only
+
+
 def test_the_agent_only_ever_writes_a_comment_a_label_and_a_status(db):
     runner, gh, _ = setup("enforce", files=MIGRATION, adjustment=15)
     runner.poll_once(NOW)
