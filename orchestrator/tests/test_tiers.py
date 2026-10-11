@@ -4,9 +4,9 @@ import yaml
 from sdlc.tiers import POLICY, ObjectionWindow, PolicyError, load_policy
 
 
-def test_the_objection_window_is_every_t1_for_an_hour():
+def test_the_objection_window_is_every_t1_for_15_minutes():
     window = load_policy().objection_window
-    assert window.tiers == ("T1",) and window.minutes == 60
+    assert window.tiers == ("T1",) and window.minutes == 15
     assert window.paths == ("*",)  # widened from the web apps on 2026-10-11
 
 

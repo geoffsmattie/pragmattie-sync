@@ -714,7 +714,9 @@ for a person. Decided with Geoff:
         that are tracked in a follow-up item don't stop a PR counting (agreed with Geoff
         2026-10-08). **Widened (branch `non-phase-work-widen-objection-window`, Geoff's
         decision at merge):** `objection_window.paths: ["*"]` covers every file, so any T1 PR
-        the AI reviewer approved merges an hour later unless a person comments `/hold`.
+        the AI reviewer approved merges 15 minutes later unless a person comments `/hold` (Geoff
+        shortened the window from 60 to 15 minutes on 2026-10-11; a person's approval still merges
+        at once).
     - **If it passes,** the next rung is **T1 auto-merge with an objection window**: a T1 PR that
       the reviewer approves (and CI passes) merges after a waiting period unless Geoff comments
       "hold"; start with front-end-only T1 PRs. **If it fails,** fix the reviewer's prompt once for

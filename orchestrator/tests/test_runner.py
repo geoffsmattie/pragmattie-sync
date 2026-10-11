@@ -158,22 +158,22 @@ def window_rows(db):
     return list(db.scalars(select(AgentDecision).where(AgentDecision.agent == "objection_window")))
 
 
-def test_rebuild_web_only_t1_merges_an_hour_after_the_ai_approval_with_no_hold(db):
+def test_rebuild_web_only_t1_merges_15_minutes_after_the_ai_approval_with_no_hold(db):
     runner, gh, _ = rebuild_setup("enforce", files=WEB_ONLY, adjustment=10)  # T1
     runner.poll_once(NOW)
     ai_review(db, 7, "sha1")  # approved at NOW
 
-    runner.poll_once(NOW + timedelta(minutes=30))
+    runner.poll_once(NOW + timedelta(minutes=10))
     status = gh.last_status("sha1")
-    assert status["state"] == "pending" and "merges after 11:00 UTC" in status["description"]
+    assert status["state"] == "pending" and "merges after 10:15 UTC" in status["description"]
     assert window_rows(db) == []
 
-    runner.poll_once(NOW + timedelta(minutes=61))
+    runner.poll_once(NOW + timedelta(minutes=16))
     assert gh.last_status("sha1")["state"] == "success"
     (row,) = window_rows(db)  # the sign-off is recorded as the window's, not a person's
     assert (row.subject_id, row.tier, row.output["commit"]) == (7, "T1", "sha1")
 
-    runner.poll_once(NOW + timedelta(minutes=62))
+    runner.poll_once(NOW + timedelta(minutes=17))
     assert len(window_rows(db)) == 1  # once per commit
 
 
@@ -205,13 +205,13 @@ def test_a_window_limited_to_paths_leaves_other_files_to_a_person(db):
 
 
 def test_the_live_window_covers_every_t1_path(db):
-    # API code too: under the live policy ("*") the window still applies, after the hour.
+    # API code too: under the live policy ("*") the window still applies, after 15 minutes.
     runner, gh, _ = rebuild_setup("enforce", files=API_TOO, adjustment=10)  # T1
     runner.poll_once(NOW)
     ai_review(db, 7, "sha1")
-    runner.poll_once(NOW + timedelta(minutes=30))
+    runner.poll_once(NOW + timedelta(minutes=10))
     assert gh.last_status("sha1")["state"] == "pending" and window_rows(db) == []
-    runner.poll_once(NOW + timedelta(minutes=61))
+    runner.poll_once(NOW + timedelta(minutes=16))
     assert gh.last_status("sha1")["state"] == "success"
     (row,) = window_rows(db)
     assert row.output["paths"] == ["*"]

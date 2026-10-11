@@ -28,10 +28,12 @@ caps:
 # still merges it at once. T2 and T3 can never be listed. Decided by Geoff on 2026-10-02, after
 # the reviewer passed its test (PRs #135-#141: 5/5 planted defects caught, both controls approved),
 # for front-end paths only. Widened to every path ("*") on 2026-10-11, after the bar Geoff set on
-# 2026-10-05 was met: 10 T1 PRs in a row merged clean, the last on 2026-10-11 (#198), no reverts.
+# 2026-10-05 was met: 10 T1 PRs in a row merged clean, the last on 2026-10-11 (#198), no reverts;
+# and shortened from 60 to 15 minutes the same day (Geoff: about CI's own time, so the chain
+# doesn't wait an hour, while a /hold still has a window).
 objection_window:
   tiers: [T1]
-  minutes: 60
+  minutes: 15
   paths: ["*"]
 
 # If the agent errors, times out or returns malformed output, a PR falls back to its floor
