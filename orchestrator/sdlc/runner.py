@@ -424,7 +424,7 @@ class Runner:
             return None
         latest = suite_selector.latest_recommendation(db, pr, sha)
         paths = (latest.output or {}).get("paths") if latest else None
-        if not paths or not all(p.startswith(window.paths) for p in paths):
+        if not window.covers(paths or []):
             return None
         for c in comments:
             person = (c.get("user") or {}).get("type") != "Bot"

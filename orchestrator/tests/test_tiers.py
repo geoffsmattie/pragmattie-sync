@@ -1,13 +1,22 @@
 import pytest
 import yaml
 
-from sdlc.tiers import POLICY, PolicyError, load_policy
+from sdlc.tiers import POLICY, ObjectionWindow, PolicyError, load_policy
 
 
-def test_the_objection_window_is_t1_web_only_for_an_hour():
+def test_the_objection_window_is_every_t1_for_an_hour():
     window = load_policy().objection_window
     assert window.tiers == ("T1",) and window.minutes == 60
-    assert window.paths == ("apps/crm-web/", "apps/insights-web/")
+    assert window.paths == ("*",)  # widened from the web apps on 2026-10-11
+
+
+def test_the_window_covers_listed_paths_or_every_path():
+    web = ObjectionWindow(("T1",), 60, ("apps/crm-web/", "apps/insights-web/"))
+    assert web.covers(["apps/crm-web/src/App.vue", "apps/insights-web/src/x.js"])
+    assert not web.covers(["apps/crm-web/src/App.vue", "orchestrator/sdlc/runner.py"])
+    every = ObjectionWindow(("T1",), 60, ("*",))
+    assert every.covers(["orchestrator/sdlc/runner.py", "docker-compose.yml"])
+    assert not web.covers([]) and not every.covers([])  # no known files: a person decides
 
 
 def test_the_objection_window_can_never_cover_t2_or_t3(tmp_path):

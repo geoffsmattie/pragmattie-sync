@@ -1,3 +1,4 @@
+import dataclasses
 import re
 from datetime import datetime, timedelta
 
@@ -8,7 +9,7 @@ from sdlc.agents.llm import StructuredLLM
 from sdlc.audit import record_decision
 from sdlc.runner import MAX_ATTEMPTS, RETRY_AFTER, Runner
 from sdlc.tables import AgentDecision, PullRequest
-from sdlc.tiers import load_policy
+from sdlc.tiers import ObjectionWindow, load_policy
 from tests.fakes import FakeAnthropic, FakeGitHub, answer, response, timeout_error
 
 NOW = datetime(2026, 9, 21, 10, 0)  # a Monday, working hours
@@ -84,10 +85,10 @@ def test_enforce_t0_needs_nobody(db):
     assert "doesn't need to act" in gh.comment_on(7)["body"]
 
 
-def rebuild_setup(mode, **kwargs):
+def rebuild_setup(mode, policy=POLICY, **kwargs):
     """The same runner, governing the agentic rebuild (its PRs have an AI reviewer)."""
     runner, gh, llm = setup(mode, **kwargs)
-    return Runner(runner.gh, runner.llm, POLICY, mode, "agentic"), gh, llm
+    return Runner(runner.gh, runner.llm, policy, mode, "agentic"), gh, llm
 
 
 def ai_review(db, pr, sha, verdict="approve"):
@@ -146,6 +147,11 @@ def test_rebuild_t1_takes_a_github_approval_of_this_commit_as_the_signoff(db):
 
 WEB_ONLY = ["apps/crm-web/src/views/AboutView.vue", "apps/crm-web/src/tests/About.spec.js"]
 API_TOO = ["apps/crm-web/src/views/AboutView.vue", "apps/api/app/routers/leads.py"]
+# The window as first decided (2026-10-02): the web apps only. The live policy covers every path.
+WEB_WINDOW_POLICY = dataclasses.replace(
+    POLICY,
+    objection_window=ObjectionWindow(("T1",), 60, ("apps/crm-web/", "apps/insights-web/")),
+)
 
 
 def window_rows(db):
@@ -189,13 +195,26 @@ def test_a_hold_from_a_person_stops_the_window(db):
     assert gh.last_status("sha1")["state"] == "success"  # a person's approval still works
 
 
-def test_the_window_needs_web_only_paths_t1_and_the_ai_approval(db):
-    # API code too: a person signs off.
-    runner, gh, _ = rebuild_setup("enforce", files=API_TOO, adjustment=10)
+def test_a_window_limited_to_paths_leaves_other_files_to_a_person(db):
+    # API code too, under a web-only window: a person signs off.
+    runner, gh, _ = rebuild_setup("enforce", policy=WEB_WINDOW_POLICY, files=API_TOO, adjustment=10)
     runner.poll_once(NOW)
     ai_review(db, 7, "sha1")
     runner.poll_once(NOW + timedelta(hours=3))
     assert gh.last_status("sha1")["state"] == "pending" and window_rows(db) == []
+
+
+def test_the_live_window_covers_every_t1_path(db):
+    # API code too: under the live policy ("*") the window still applies, after the hour.
+    runner, gh, _ = rebuild_setup("enforce", files=API_TOO, adjustment=10)  # T1
+    runner.poll_once(NOW)
+    ai_review(db, 7, "sha1")
+    runner.poll_once(NOW + timedelta(minutes=30))
+    assert gh.last_status("sha1")["state"] == "pending" and window_rows(db) == []
+    runner.poll_once(NOW + timedelta(minutes=61))
+    assert gh.last_status("sha1")["state"] == "success"
+    (row,) = window_rows(db)
+    assert row.output["paths"] == ["*"]
 
 
 def test_the_window_never_applies_without_the_ai_approval(db):

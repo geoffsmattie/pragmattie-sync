@@ -709,6 +709,12 @@ for a person. Decided with Geoff:
       - Why now and not sooner: of M4's first three T1 PRs, #158 and #160 needed changes, and
         the reviewer approved #160 before a person caught its gap. T2 and T3 always keep a
         person; `tiers.yaml` refuses to list them.
+      - **Bar met 2026-10-11** with #198 (5.7): #171, #172, #174, #175, #176, #183, #184, #186,
+        #196, #198 (#173, #179 neutral). Reviewer should-fixes that the review itself caught and
+        that are tracked in a follow-up item don't stop a PR counting (agreed with Geoff
+        2026-10-08). **Widened (branch `non-phase-work-widen-objection-window`, Geoff's
+        decision at merge):** `objection_window.paths: ["*"]` covers every file, so any T1 PR
+        the AI reviewer approved merges an hour later unless a person comments `/hold`.
     - **If it passes,** the next rung is **T1 auto-merge with an objection window**: a T1 PR that
       the reviewer approves (and CI passes) merges after a waiting period unless Geoff comments
       "hold"; start with front-end-only T1 PRs. **If it fails,** fix the reviewer's prompt once for

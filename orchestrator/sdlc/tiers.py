@@ -43,15 +43,24 @@ class ReleaseRules:
     synthetic_signoff_hours: float
 
 
+ANY_PATH = "*"  # objection_window.paths: every file
+
+
 @dataclass(frozen=True)
 class ObjectionWindow:
     """Where an AI reviewer runs (the agentic rebuild): a PR at one of `tiers`, changing only
     files under `paths`, that the reviewer approved, counts as signed off once that approval is
-    `minutes` old, unless a person has commented /hold on it."""
+    `minutes` old, unless a person has commented /hold on it. `paths` of `"*"` covers every file."""
 
     tiers: tuple[str, ...]
     minutes: int
     paths: tuple[str, ...]
+
+    def covers(self, changed: list[str]) -> bool:
+        """Whether every changed file is one the window may sign off (no files: never)."""
+        if not changed:
+            return False
+        return ANY_PATH in self.paths or all(p.startswith(self.paths) for p in changed)
 
 
 @dataclass(frozen=True)
