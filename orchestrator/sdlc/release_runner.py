@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from sdlc.agents import release_gate as gate
 from sdlc.agents.github_effects import Effects
 from sdlc.agents.pr_risk import AGENT as PR_RISK_AGENT
+from sdlc.agents.suite_select import profile_for
 from sdlc.audit import decisions_for, latest_decision, record_decision
 from sdlc.github_client import GitHubClient, GitHubError
 from sdlc.governance import Facts, assign_tier
@@ -207,7 +208,7 @@ class ReleaseRunner:
     def facts_for(self, db: Session, head: PullRequest | None, sha: str, now: datetime):
         prs = release_prs(db, head) if head else []
         modules = sorted({p.module for p in prs if p.module})
-        results = ci_results(self.gh, sha)
+        results = ci_results(self.gh, sha, profile_for(self.source))
         if results is None:
             ci = "running"
         else:

@@ -608,6 +608,12 @@ for a person. Decided with Geoff:
   `rebuild:pr_risk`, `rebuild:triage`, `rebuild:release_gate` (idle until the rebuild has a deploy
   workflow) and `rebuild:implementer_runs`. Each runner and the `Collector` take a `source`; the
   test selector settles CI per source with that repository's client.
+  **Each repository has its own CI profile** (`suite_select.CIProfile`, 2026-10-12): v1 and its
+  simulated history use `V1` (four jobs: API, Migrations, Web, Orchestrator); the rebuild uses
+  `REBUILD`, its own five ci.yml jobs (CRM API, Orchestrator, Migrations on MySQL, CRM web,
+  Insights web) and folders (`apps/crm-web`, `apps/insights-web`, `*/migrations/`). The test
+  selector, CI settling and the release gate read a repository's CI by its profile, so the
+  rebuild's releases aren't held for ever waiting for jobs it doesn't have.
   - **Implementer runs in the audit trail** (`sdlc/agent_runs.py`): the rebuild's workflow posts
     `<!-- pragmattie-run {...} -->` on the issue after each run; only `github-actions[bot]`
     comments count. One row per run: `agent = implementer`, `subject_source = agentic`,

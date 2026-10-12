@@ -6,11 +6,14 @@ from sdlc import suite_selector
 from sdlc.agents.llm import StructuredLLM
 from sdlc.agents.suite_select import (
     CI_SUITES,
+    REBUILD,
     TESTS_END,
     TESTS_START,
+    V1,
     Flaky,
     by_paths,
     flaky_suites,
+    profile_for,
     replace_section,
     section_lines,
     select_suites,
@@ -38,6 +41,30 @@ def all_pass(**overrides):
 
 def pick(paths, tier="T0", assessed=True):
     return select_suites(paths, tier=tier, policy=POLICY, assessed=assessed)
+
+
+def test_the_rebuild_has_its_own_jobs_and_folders():
+    assert profile_for("agentic") is REBUILD and profile_for("github") is V1
+    assert profile_for("synthetic") is V1
+
+    def rebuild(paths, tier="T0"):
+        return select_suites(paths, tier=tier, policy=POLICY, profile=REBUILD)
+
+    crm = rebuild(["apps/crm-web/src/views/LeadsView.vue"])
+    assert crm.suites == ("web",)
+    assert crm.skipped == ("api", "orchestrator", "migrations", "insights-web")
+    assert rebuild(["apps/insights-web/src/forecast.js"]).suites == ("insights-web",)
+    migration = rebuild(["orchestrator/migrations/versions/0009_x.py"])
+    assert migration.suites == ("orchestrator", "migrations")
+    assert rebuild(["apps/api/migrations/versions/0003_x.py"]).suites == ("api", "migrations")
+    assert rebuild(["apps/api/tests/test_leads.py"]).suites == ("api",)
+    # v1's folder is unknown in the rebuild, so it runs everything.
+    assert rebuild(["apps/web/src/App.vue"]).suites == REBUILD.suites
+    assert rebuild(["README.md"], tier="T2").suites == REBUILD.suites
+
+    text = "\n".join(section_lines(crm))
+    assert "Would run: **CRM web**" in text
+    assert "Would skip: CRM API, Orchestrator, Migrations, Insights web" in text
 
 
 # --- the rules -------------------------------------------------------------------------------
