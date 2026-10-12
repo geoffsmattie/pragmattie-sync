@@ -24,15 +24,15 @@ from sqlalchemy.orm import Session
 from sdlc.agents.suite_select import (
     AGENT,
     AGENT_VERSION,
-    CI_SUITES,
+    CIProfile,
     Selection,
     flaky_suites,
+    profile_for,
     select_suites,
     with_flaky,
 )
 from sdlc.audit import record_decision
 from sdlc.github_client import GitHubClient, parse_time
-from sdlc.signals.github import JOB_SUITES
 from sdlc.tables import AgentDecision, PullRequest
 from sdlc.tiers import Policy
 
@@ -54,8 +54,9 @@ def recommend(
     trigger: str = "poll",
 ) -> Selection:
     """Choose the suites for this commit and record the choice."""
-    selection = select_suites(paths, tier=tier, policy=policy, assessed=assessed)
-    selection = with_flaky(selection, flaky_suites(db, now))
+    profile = profile_for(pr.source)
+    selection = select_suites(paths, tier=tier, policy=policy, assessed=assessed, profile=profile)
+    selection = with_flaky(selection, flaky_suites(db, now, profile))
     record_decision(
         db,
         agent=AGENT,
@@ -131,8 +132,9 @@ def unsettled(db: Session, now: datetime, source: str = "github") -> list[AgentD
     return [row for key, row in latest.items() if key not in settled]
 
 
-def ci_results(gh: GitHubClient, sha: str) -> dict[str, dict] | None:
-    """Each CI job's final result on this commit, or None while any job hasn't finished.
+def ci_results(gh: GitHubClient, sha: str, profile: CIProfile) -> dict[str, dict] | None:
+    """Each CI job's final result on this commit (by `profile`'s job names), or None while any
+    job hasn't finished.
 
     A job that failed and then passed on a re-run counts as flaky, and its final result stands.
     """
@@ -143,10 +145,10 @@ def ci_results(gh: GitHubClient, sha: str) -> dict[str, dict] | None:
             f"/repos/{{repo}}/actions/runs/{run['id']}/jobs", key="jobs", filter="all"
         )
         for job in sorted(jobs, key=lambda j: j.get("run_attempt", 1)):
-            if suite := JOB_SUITES.get(job["name"]):
+            if suite := profile.jobs.get(job["name"]):
                 attempts.setdefault(suite, []).append(job)
     results = {}
-    for suite in CI_SUITES:
+    for suite in profile.suites:
         jobs = attempts.get(suite)
         if not jobs or not jobs[-1].get("conclusion"):
             return None  # not run yet, or still running
@@ -172,7 +174,7 @@ def settle(db: Session, gh: GitHubClient, now: datetime, source: str = "github")
     repository `gh` talks to (`source` names its rows)."""
     recorded = 0
     for rec in unsettled(db, now, source):
-        results = ci_results(gh, rec.head_sha)
+        results = ci_results(gh, rec.head_sha, profile_for(source))
         if results is None:
             continue
         skipped = rec.output["skipped"]

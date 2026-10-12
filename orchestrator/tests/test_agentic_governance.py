@@ -5,14 +5,17 @@ from sqlalchemy import select
 
 from sdlc.agent_runs import AgentRunCollector, parse_record
 from sdlc.agents.llm import StructuredLLM
+from sdlc.agents.suite_select import REBUILD, V1
 from sdlc.audit import record_decision
 from sdlc.board import build_board
 from sdlc.issue_runner import IssueRunner
 from sdlc.metrics import dora_summary
+from sdlc.release_runner import ReleaseRunner
 from sdlc.signals.github import Collector
 from sdlc.suite_selector import AGENT as SELECTOR
-from sdlc.suite_selector import settle
+from sdlc.suite_selector import ci_results, settle
 from sdlc.tables import AgentDecision, Issue, PullRequest
+from sdlc.tiers import load_policy
 from tests.fakes import FakeAnthropic, FakeGitHub, response, triage_answer
 
 NOW = datetime(2026, 9, 28, 12, 0)
@@ -183,15 +186,18 @@ def test_the_same_number_in_both_repositories_never_collides(db):
     assert sorted(r.source for r in rows) == ["agentic", "github"]
 
 
+REBUILD_JOBS = {  # the rebuild's own ci.yml job names
+    "CRM API (lint + tests)": ["success"],
+    "Orchestrator (lint + tests)": ["success"],
+    "Migrations on MySQL": ["success"],
+    "CRM web (tests + build)": ["success"],
+    "Insights web (tests + build)": ["success"],
+}
+
+
 def test_ci_results_are_settled_per_repository(db):
     gh = FakeGitHub()
-    jobs = {
-        "API (lint + tests)": ["success"],
-        "API (migrations on MySQL)": ["success"],
-        "Web (tests + build)": ["success"],
-        "Orchestrator (lint + tests)": ["success"],
-    }
-    gh.ci("abc", jobs)
+    gh.ci("abc", REBUILD_JOBS)
     for source in ("github", "agentic"):
         record_decision(
             db,
@@ -211,6 +217,26 @@ def test_ci_results_are_settled_per_repository(db):
     assert settle(db, gh.client(), NOW, "agentic") == 1
     results = db.scalars(select(AgentDecision).where(AgentDecision.trigger == "ci_result")).all()
     assert [r.subject_source for r in results] == ["agentic"]
+    assert sorted(results[0].output["results"]) == sorted(REBUILD.suites)
+
+
+def test_the_rebuilds_ci_is_read_by_its_own_job_names():
+    gh = FakeGitHub()
+    gh.ci("v2", REBUILD_JOBS)
+    gh.ci("v1-names", {name: ["success"] for name in V1.jobs})
+    assert set(ci_results(gh.client(), "v2", REBUILD)) == set(REBUILD.suites)
+    # v1's job names never complete the rebuild's CI: that would hold every release for ever.
+    assert ci_results(gh.client(), "v1-names", REBUILD) is None
+    assert ci_results(gh.client(), "v2", V1) is None
+
+
+def test_the_rebuilds_release_gate_passes_once_its_ci_passes(db):
+    gh = FakeGitHub()
+    gh.ci("m7", {**REBUILD_JOBS, "Insights web (tests + build)": [None]})
+    runner = ReleaseRunner(gh.client(), load_policy(), "enforce", "agentic")
+    assert runner.facts_for(db, None, "m7", NOW).ci == "running"
+    gh.ci("m7", REBUILD_JOBS)
+    assert runner.facts_for(db, None, "m7", NOW).ci == "passed"
 
 
 def test_v1s_board_and_metrics_leave_the_rebuild_out(db):
