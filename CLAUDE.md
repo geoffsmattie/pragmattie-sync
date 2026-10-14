@@ -614,6 +614,10 @@ for a person. Decided with Geoff:
   Insights web) and folders (`apps/crm-web`, `apps/insights-web`, `*/migrations/`). The test
   selector, CI settling and the release gate read a repository's CI by its profile, so the
   rebuild's releases aren't held for ever waiting for jobs it doesn't have.
+  **Export for the cutover (2026-10-14):** `python -m sdlc.export_rebuild --out FILE` writes every
+  audit row about the rebuild (`subject_source = agentic`, every column, oldest first) and its PRs'
+  simulated approvals as JSON. The rebuild's M7 compares its decisions with it (7.2) and imports it
+  as "decided by v1" (7.3); that file is the whole contract, so the rebuild never reads this code.
   - **Implementer runs in the audit trail** (`sdlc/agent_runs.py`): the rebuild's workflow posts
     `<!-- pragmattie-run {...} -->` on the issue after each run; only `github-actions[bot]`
     comments count. One row per run: `agent = implementer`, `subject_source = agentic`,
